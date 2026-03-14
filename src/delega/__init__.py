@@ -9,6 +9,7 @@ from .exceptions import (
     DelegaRateLimitError,
 )
 from .models import Agent, Comment, Project, Task
+from .webhooks import verify_webhook
 
 __version__ = "0.1.1"
 
@@ -24,6 +25,7 @@ __all__ = [
     "DelegaRateLimitError",
     "Project",
     "Task",
+    "verify_webhook",
 ]
 
 
