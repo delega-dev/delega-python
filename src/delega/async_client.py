@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
+from ._http import normalize_base_url
 from .exceptions import (
     DelegaAPIError,
     DelegaAuthError,
@@ -34,7 +35,7 @@ class _AsyncHTTPClient:
 
     def __init__(self, base_url: str, api_key: str, timeout: int = 30) -> None:
         httpx = _require_httpx()
-        self._base_url = base_url.rstrip("/")
+        self._base_url = normalize_base_url(base_url)
         self._api_key = api_key
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
@@ -136,7 +137,7 @@ class _AsyncTasksNamespace:
             "due_before": due_before,
             "completed": completed,
         }
-        data = await self._http.get("/v1/tasks", params=params)
+        data = await self._http.get("/tasks", params=params)
         return [Task.from_dict(t) for t in data]
 
     async def create(
@@ -159,32 +160,32 @@ class _AsyncTasksNamespace:
             body["due_date"] = due_date
         if project_id is not None:
             body["project_id"] = project_id
-        data = await self._http.post("/v1/tasks", body=body)
+        data = await self._http.post("/tasks", body=body)
         return Task.from_dict(data)
 
     async def get(self, task_id: str) -> Task:
         """Get a task by ID."""
-        data = await self._http.get(f"/v1/tasks/{task_id}")
+        data = await self._http.get(f"/tasks/{task_id}")
         return Task.from_dict(data)
 
     async def update(self, task_id: str, **fields: Any) -> Task:
         """Update a task."""
-        data = await self._http.patch(f"/v1/tasks/{task_id}", body=fields)
+        data = await self._http.patch(f"/tasks/{task_id}", body=fields)
         return Task.from_dict(data)
 
     async def delete(self, task_id: str) -> bool:
         """Delete a task."""
-        await self._http.delete(f"/v1/tasks/{task_id}")
+        await self._http.delete(f"/tasks/{task_id}")
         return True
 
     async def complete(self, task_id: str) -> Task:
         """Mark a task as completed."""
-        data = await self._http.post(f"/v1/tasks/{task_id}/complete")
+        data = await self._http.post(f"/tasks/{task_id}/complete")
         return Task.from_dict(data)
 
     async def uncomplete(self, task_id: str) -> Task:
         """Mark a task as not completed."""
-        data = await self._http.post(f"/v1/tasks/{task_id}/uncomplete")
+        data = await self._http.post(f"/tasks/{task_id}/uncomplete")
         return Task.from_dict(data)
 
     async def search(self, query: str) -> list[Task]:
@@ -205,17 +206,17 @@ class _AsyncTasksNamespace:
             body["description"] = description
         if priority is not None:
             body["priority"] = priority
-        data = await self._http.post(f"/v1/tasks/{parent_task_id}/delegate", body=body)
+        data = await self._http.post(f"/tasks/{parent_task_id}/delegate", body=body)
         return Task.from_dict(data)
 
     async def add_comment(self, task_id: str, content: str) -> Comment:
         """Add a comment to a task."""
-        data = await self._http.post(f"/v1/tasks/{task_id}/comments", body={"content": content})
+        data = await self._http.post(f"/tasks/{task_id}/comments", body={"content": content})
         return Comment.from_dict(data)
 
     async def list_comments(self, task_id: str) -> list[Comment]:
         """List all comments on a task."""
-        data = await self._http.get(f"/v1/tasks/{task_id}/comments")
+        data = await self._http.get(f"/tasks/{task_id}/comments")
         return [Comment.from_dict(c) for c in data]
 
 
@@ -227,7 +228,7 @@ class _AsyncAgentsNamespace:
 
     async def list(self) -> list[Agent]:
         """List all agents."""
-        data = await self._http.get("/v1/agents")
+        data = await self._http.get("/agents")
         return [Agent.from_dict(a) for a in data]
 
     async def create(
@@ -243,22 +244,22 @@ class _AsyncAgentsNamespace:
             body["display_name"] = display_name
         if description is not None:
             body["description"] = description
-        data = await self._http.post("/v1/agents", body=body)
+        data = await self._http.post("/agents", body=body)
         return Agent.from_dict(data)
 
     async def update(self, agent_id: str, **fields: Any) -> Agent:
         """Update an agent."""
-        data = await self._http.patch(f"/v1/agents/{agent_id}", body=fields)
+        data = await self._http.patch(f"/agents/{agent_id}", body=fields)
         return Agent.from_dict(data)
 
     async def delete(self, agent_id: str) -> bool:
         """Delete an agent."""
-        await self._http.delete(f"/v1/agents/{agent_id}")
+        await self._http.delete(f"/agents/{agent_id}")
         return True
 
     async def rotate_key(self, agent_id: str) -> dict[str, Any]:
         """Rotate an agent's API key."""
-        data = await self._http.post(f"/v1/agents/{agent_id}/rotate-key")
+        data = await self._http.post(f"/agents/{agent_id}/rotate-key")
         return data  # type: ignore[no-any-return]
 
 
@@ -270,7 +271,7 @@ class _AsyncProjectsNamespace:
 
     async def list(self) -> list[Project]:
         """List all projects."""
-        data = await self._http.get("/v1/projects")
+        data = await self._http.get("/projects")
         return [Project.from_dict(p) for p in data]
 
     async def create(
@@ -286,7 +287,7 @@ class _AsyncProjectsNamespace:
             body["emoji"] = emoji
         if color is not None:
             body["color"] = color
-        data = await self._http.post("/v1/projects", body=body)
+        data = await self._http.post("/projects", body=body)
         return Project.from_dict(data)
 
 
@@ -298,7 +299,7 @@ class _AsyncWebhooksNamespace:
 
     async def list(self) -> list[Any]:
         """List all webhooks."""
-        return await self._http.get("/v1/webhooks")  # type: ignore[no-any-return]
+        return await self._http.get("/webhooks")  # type: ignore[no-any-return]
 
     async def create(
         self,
@@ -313,7 +314,7 @@ class _AsyncWebhooksNamespace:
             body["events"] = events
         if secret is not None:
             body["secret"] = secret
-        return await self._http.post("/v1/webhooks", body=body)  # type: ignore[no-any-return]
+        return await self._http.post("/webhooks", body=body)  # type: ignore[no-any-return]
 
 
 class AsyncDelega:
@@ -332,7 +333,9 @@ class AsyncDelega:
         api_key: API key for authentication. If not provided, reads from
             the ``DELEGA_API_KEY`` environment variable.
         base_url: Base URL of the Delega API. Defaults to
-            ``https://api.delega.dev``.
+            ``https://api.delega.dev`` (normalized to ``/v1``). For
+            self-hosted deployments, use ``http://localhost:18890`` or an
+            explicit ``.../api`` base URL.
         timeout: Request timeout in seconds. Defaults to 30.
 
     Raises:
@@ -360,11 +363,11 @@ class AsyncDelega:
 
     async def me(self) -> dict[str, Any]:
         """Get information about the authenticated agent."""
-        return await self._http.get("/v1/agent/me")  # type: ignore[no-any-return]
+        return await self._http.get("/agent/me")  # type: ignore[no-any-return]
 
     async def usage(self) -> dict[str, Any]:
         """Get API usage information."""
-        return await self._http.get("/v1/usage")  # type: ignore[no-any-return]
+        return await self._http.get("/usage")  # type: ignore[no-any-return]
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client."""

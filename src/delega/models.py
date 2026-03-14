@@ -68,7 +68,7 @@ class Agent:
     name: str
     display_name: Optional[str] = None
     description: Optional[str] = None
-    api_key: Optional[str] = None
+    api_key: Optional[str] = field(default=None, repr=False)
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

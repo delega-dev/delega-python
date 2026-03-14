@@ -66,13 +66,26 @@ class TestClientInit(unittest.TestCase):
         client = Delega(api_key="dlg_direct")
         self.assertEqual(client._http._api_key, "dlg_direct")
 
-    def test_custom_base_url(self) -> None:
+    def test_remote_base_url_defaults_to_v1_namespace(self) -> None:
         client = Delega(api_key="dlg_test", base_url="https://custom.host")
-        self.assertEqual(client._http._base_url, "https://custom.host")
+        self.assertEqual(client._http._base_url, "https://custom.host/v1")
 
     def test_base_url_trailing_slash_stripped(self) -> None:
         client = Delega(api_key="dlg_test", base_url="https://custom.host/")
-        self.assertEqual(client._http._base_url, "https://custom.host")
+        self.assertEqual(client._http._base_url, "https://custom.host/v1")
+
+    def test_remote_base_url_with_explicit_path_is_preserved(self) -> None:
+        client = Delega(api_key="dlg_test", base_url="https://custom.host/api")
+        self.assertEqual(client._http._base_url, "https://custom.host/api")
+
+    def test_localhost_base_url_defaults_to_api_namespace(self) -> None:
+        client = Delega(api_key="dlg_test", base_url="http://localhost:18890")
+        self.assertEqual(client._http._base_url, "http://localhost:18890/api")
+
+    def test_remote_plain_http_is_rejected(self) -> None:
+        with self.assertRaises(DelegaError) as ctx:
+            Delega(api_key="dlg_test", base_url="http://custom.host")
+        self.assertIn("HTTPS", str(ctx.exception))
 
     def test_has_namespaces(self) -> None:
         client = Delega(api_key="dlg_test")
@@ -404,6 +417,10 @@ class TestModels(unittest.TestCase):
         agent = Agent.from_dict({"id": "a1", "name": "bot", "api_key": "dlg_key"})
         self.assertEqual(agent.name, "bot")
         self.assertEqual(agent.api_key, "dlg_key")
+
+    def test_agent_repr_redacts_api_key(self) -> None:
+        agent = Agent.from_dict({"id": "a1", "name": "bot", "api_key": "dlg_key"})
+        self.assertNotIn("dlg_key", repr(agent))
 
     def test_project_from_dict(self) -> None:
         project = Project.from_dict({"id": "p1", "name": "Proj", "emoji": "🎯"})

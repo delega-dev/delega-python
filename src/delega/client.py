@@ -52,7 +52,7 @@ class _TasksNamespace:
             "due_before": due_before,
             "completed": completed,
         }
-        data = self._http.get("/v1/tasks", params=params)
+        data = self._http.get("/tasks", params=params)
         return [Task.from_dict(t) for t in data]
 
     def create(
@@ -84,7 +84,7 @@ class _TasksNamespace:
             body["due_date"] = due_date
         if project_id is not None:
             body["project_id"] = project_id
-        data = self._http.post("/v1/tasks", body=body)
+        data = self._http.post("/tasks", body=body)
         return Task.from_dict(data)
 
     def get(self, task_id: str) -> Task:
@@ -93,7 +93,7 @@ class _TasksNamespace:
         Args:
             task_id: The task identifier.
         """
-        data = self._http.get(f"/v1/tasks/{task_id}")
+        data = self._http.get(f"/tasks/{task_id}")
         return Task.from_dict(data)
 
     def update(self, task_id: str, **fields: Any) -> Task:
@@ -103,7 +103,7 @@ class _TasksNamespace:
             task_id: The task identifier.
             **fields: Fields to update (content, description, priority, etc.).
         """
-        data = self._http.patch(f"/v1/tasks/{task_id}", body=fields)
+        data = self._http.patch(f"/tasks/{task_id}", body=fields)
         return Task.from_dict(data)
 
     def delete(self, task_id: str) -> bool:
@@ -115,7 +115,7 @@ class _TasksNamespace:
         Returns:
             ``True`` if the task was deleted successfully.
         """
-        self._http.delete(f"/v1/tasks/{task_id}")
+        self._http.delete(f"/tasks/{task_id}")
         return True
 
     def complete(self, task_id: str) -> Task:
@@ -124,7 +124,7 @@ class _TasksNamespace:
         Args:
             task_id: The task identifier.
         """
-        data = self._http.post(f"/v1/tasks/{task_id}/complete")
+        data = self._http.post(f"/tasks/{task_id}/complete")
         return Task.from_dict(data)
 
     def uncomplete(self, task_id: str) -> Task:
@@ -133,7 +133,7 @@ class _TasksNamespace:
         Args:
             task_id: The task identifier.
         """
-        data = self._http.post(f"/v1/tasks/{task_id}/uncomplete")
+        data = self._http.post(f"/tasks/{task_id}/uncomplete")
         return Task.from_dict(data)
 
     def search(self, query: str) -> list[Task]:
@@ -167,7 +167,7 @@ class _TasksNamespace:
             body["description"] = description
         if priority is not None:
             body["priority"] = priority
-        data = self._http.post(f"/v1/tasks/{parent_task_id}/delegate", body=body)
+        data = self._http.post(f"/tasks/{parent_task_id}/delegate", body=body)
         return Task.from_dict(data)
 
     def add_comment(self, task_id: str, content: str) -> Comment:
@@ -177,7 +177,7 @@ class _TasksNamespace:
             task_id: The task identifier.
             content: The comment text.
         """
-        data = self._http.post(f"/v1/tasks/{task_id}/comments", body={"content": content})
+        data = self._http.post(f"/tasks/{task_id}/comments", body={"content": content})
         return Comment.from_dict(data)
 
     def list_comments(self, task_id: str) -> list[Comment]:
@@ -186,7 +186,7 @@ class _TasksNamespace:
         Args:
             task_id: The task identifier.
         """
-        data = self._http.get(f"/v1/tasks/{task_id}/comments")
+        data = self._http.get(f"/tasks/{task_id}/comments")
         return [Comment.from_dict(c) for c in data]
 
 
@@ -198,7 +198,7 @@ class _AgentsNamespace:
 
     def list(self) -> list[Agent]:
         """List all agents."""
-        data = self._http.get("/v1/agents")
+        data = self._http.get("/agents")
         return [Agent.from_dict(a) for a in data]
 
     def create(
@@ -223,7 +223,7 @@ class _AgentsNamespace:
             body["display_name"] = display_name
         if description is not None:
             body["description"] = description
-        data = self._http.post("/v1/agents", body=body)
+        data = self._http.post("/agents", body=body)
         return Agent.from_dict(data)
 
     def update(self, agent_id: str, **fields: Any) -> Agent:
@@ -233,7 +233,7 @@ class _AgentsNamespace:
             agent_id: The agent identifier.
             **fields: Fields to update (name, display_name, description).
         """
-        data = self._http.patch(f"/v1/agents/{agent_id}", body=fields)
+        data = self._http.patch(f"/agents/{agent_id}", body=fields)
         return Agent.from_dict(data)
 
     def delete(self, agent_id: str) -> bool:
@@ -245,7 +245,7 @@ class _AgentsNamespace:
         Returns:
             ``True`` if the agent was deleted successfully.
         """
-        self._http.delete(f"/v1/agents/{agent_id}")
+        self._http.delete(f"/agents/{agent_id}")
         return True
 
     def rotate_key(self, agent_id: str) -> dict[str, Any]:
@@ -257,7 +257,7 @@ class _AgentsNamespace:
         Returns:
             Dictionary containing the new ``api_key``.
         """
-        data = self._http.post(f"/v1/agents/{agent_id}/rotate-key")
+        data = self._http.post(f"/agents/{agent_id}/rotate-key")
         return data  # type: ignore[no-any-return]
 
 
@@ -269,7 +269,7 @@ class _ProjectsNamespace:
 
     def list(self) -> list[Project]:
         """List all projects."""
-        data = self._http.get("/v1/projects")
+        data = self._http.get("/projects")
         return [Project.from_dict(p) for p in data]
 
     def create(
@@ -291,7 +291,7 @@ class _ProjectsNamespace:
             body["emoji"] = emoji
         if color is not None:
             body["color"] = color
-        data = self._http.post("/v1/projects", body=body)
+        data = self._http.post("/projects", body=body)
         return Project.from_dict(data)
 
 
@@ -303,7 +303,7 @@ class _WebhooksNamespace:
 
     def list(self) -> list[Any]:
         """List all webhooks."""
-        return self._http.get("/v1/webhooks")  # type: ignore[no-any-return]
+        return self._http.get("/webhooks")  # type: ignore[no-any-return]
 
     def create(
         self,
@@ -324,7 +324,7 @@ class _WebhooksNamespace:
             body["events"] = events
         if secret is not None:
             body["secret"] = secret
-        return self._http.post("/v1/webhooks", body=body)  # type: ignore[no-any-return]
+        return self._http.post("/webhooks", body=body)  # type: ignore[no-any-return]
 
 
 class Delega:
@@ -341,7 +341,9 @@ class Delega:
         api_key: API key for authentication. If not provided, reads from
             the ``DELEGA_API_KEY`` environment variable.
         base_url: Base URL of the Delega API. Defaults to
-            ``https://api.delega.dev``.
+            ``https://api.delega.dev`` (normalized to ``/v1``). For
+            self-hosted deployments, use ``http://localhost:18890`` or an
+            explicit ``.../api`` base URL.
         timeout: Request timeout in seconds. Defaults to 30.
 
     Raises:
@@ -372,7 +374,7 @@ class Delega:
         Returns:
             Dictionary with agent details.
         """
-        return self._http.get("/v1/agent/me")  # type: ignore[no-any-return]
+        return self._http.get("/agent/me")  # type: ignore[no-any-return]
 
     def usage(self) -> dict[str, Any]:
         """Get API usage information.
@@ -380,4 +382,4 @@ class Delega:
         Returns:
             Dictionary with usage statistics.
         """
-        return self._http.get("/v1/usage")  # type: ignore[no-any-return]
+        return self._http.get("/usage")  # type: ignore[no-any-return]

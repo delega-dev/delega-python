@@ -44,11 +44,14 @@ client = Delega(api_key="dlg_...")
 client = Delega()
 ```
 
-For self-hosted instances:
+For self-hosted instances, point `base_url` at the API namespace:
 
 ```python
-client = Delega(api_key="dlg_...", base_url="https://delega.yourcompany.com")
+client = Delega(api_key="dlg_...", base_url="http://localhost:18890")
+# or: Delega(api_key="dlg_...", base_url="https://delega.yourcompany.com/api")
 ```
+
+Passing a bare localhost URL defaults to the self-hosted `/api` namespace. For remote self-hosted deployments, include `/api` explicitly.
 
 ## Tasks
 
@@ -117,6 +120,8 @@ me = client.me()       # Get authenticated agent info
 usage = client.usage()  # Get API usage stats
 ```
 
+`me()` and `usage()` are hosted-account endpoints. Self-hosted OSS deployments expose task/agent/project/webhook APIs under `/api`, but may not implement those hosted account endpoints.
+
 ## Async Client
 
 ```python
@@ -156,6 +161,8 @@ All resource methods return typed dataclasses:
 - `Task` - id, content, description, priority, labels, due_date, completed, project_id, parent_id, created_at, updated_at
 - `Comment` - id, task_id, content, created_at
 - `Agent` - id, name, display_name, description, api_key, created_at, updated_at
+
+The `api_key` field is returned on agent creation and key rotation responses, but it is hidden from the default dataclass `repr()` to reduce accidental secret leakage in logs.
 - `Project` - id, name, emoji, color, created_at, updated_at
 
 ## License

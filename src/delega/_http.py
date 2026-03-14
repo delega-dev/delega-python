@@ -11,18 +11,51 @@ from typing import Any, Optional
 from .exceptions import (
     DelegaAPIError,
     DelegaAuthError,
+    DelegaError,
     DelegaNotFoundError,
     DelegaRateLimitError,
 )
 
 _DEFAULT_TIMEOUT = 30
+_LOCAL_API_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _normalize_host(hostname: str) -> str:
+    return hostname.strip("[]").lower()
+
+
+def _is_local_host(hostname: str) -> bool:
+    return _normalize_host(hostname) in _LOCAL_API_HOSTS
+
+
+def normalize_base_url(raw_url: str) -> str:
+    """Normalize a Delega base URL to include its API namespace."""
+    parsed = urllib.parse.urlparse(raw_url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise DelegaError(
+            "Invalid Delega base_url. Use a full URL such as "
+            "'https://api.delega.dev' or 'http://localhost:18890'."
+        )
+
+    if parsed.scheme != "https" and not _is_local_host(parsed.hostname or ""):
+        raise DelegaError(
+            "Delega base_url must use HTTPS unless it points to localhost."
+        )
+
+    path = parsed.path.rstrip("/")
+    if not path:
+        path = "/api" if _is_local_host(parsed.hostname or "") else "/v1"
+
+    return urllib.parse.urlunparse(
+        (parsed.scheme, parsed.netloc, path, "", "", "")
+    )
 
 
 class HTTPClient:
     """Synchronous HTTP client using urllib."""
 
     def __init__(self, base_url: str, api_key: str, timeout: int = _DEFAULT_TIMEOUT) -> None:
-        self._base_url = base_url.rstrip("/")
+        self._base_url = normalize_base_url(base_url)
         self._api_key = api_key
         self._timeout = timeout
 
@@ -45,7 +78,7 @@ class HTTPClient:
 
         Args:
             method: HTTP method (GET, POST, PUT, PATCH, DELETE).
-            path: API path (e.g. ``/v1/tasks``).
+            path: API path relative to the configured API namespace (e.g. ``/tasks``).
             params: Optional query parameters.
             body: Optional JSON request body.
 
