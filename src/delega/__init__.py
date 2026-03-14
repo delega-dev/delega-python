@@ -10,7 +10,7 @@ from .exceptions import (
 )
 from .models import Agent, Comment, Project, Task
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "Agent",
