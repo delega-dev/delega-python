@@ -103,7 +103,7 @@ class _TasksNamespace:
             task_id: The task identifier.
             **fields: Fields to update (content, description, priority, etc.).
         """
-        data = self._http.patch(f"/tasks/{task_id}", body=fields)
+        data = self._http.put(f"/tasks/{task_id}", body=fields)
         return Task.from_dict(data)
 
     def delete(self, task_id: str) -> bool:
@@ -326,6 +326,15 @@ class _WebhooksNamespace:
             body["secret"] = secret
         return self._http.post("/webhooks", body=body)  # type: ignore[no-any-return]
 
+    def delete(self, webhook_id: str) -> bool:
+        """Delete a webhook.
+
+        Args:
+            webhook_id: The webhook identifier.
+        """
+        self._http.delete(f"/webhooks/{webhook_id}")
+        return True
+
 
 class Delega:
     """Synchronous client for the Delega API.
@@ -382,4 +391,4 @@ class Delega:
         Returns:
             Dictionary with usage statistics.
         """
-        return self._http.get("/usage")  # type: ignore[no-any-return]
+        return self._http.get("/stats")  # type: ignore[no-any-return]

@@ -165,7 +165,7 @@ class TestTasksMethods(unittest.TestCase):
         task = self.client.tasks.update("t1", content="Updated", priority=1)
         self.assertEqual(task.content, "Updated")
         request = mock_urlopen.call_args[0][0]
-        self.assertEqual(request.get_method(), "PATCH")
+        self.assertEqual(request.get_method(), "PUT")
 
     @patch("urllib.request.urlopen")
     def test_delete_task(self, mock_urlopen: MagicMock) -> None:
@@ -308,6 +308,12 @@ class TestWebhooksMethods(unittest.TestCase):
             "https://example.com/hook", events=["task.created"]
         )
         self.assertEqual(webhook["url"], "https://example.com/hook")
+
+    @patch("urllib.request.urlopen")
+    def test_delete_webhook(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response(None, status=204)
+        result = self.client.webhooks.delete("w1")
+        self.assertTrue(result)
 
 
 class TestTopLevelMethods(unittest.TestCase):
