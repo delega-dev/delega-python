@@ -11,7 +11,7 @@ from .exceptions import (
 from .models import Agent, Comment, Project, Task
 from .webhooks import verify_webhook
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = [
     "Agent",
