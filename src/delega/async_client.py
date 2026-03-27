@@ -14,6 +14,7 @@ from .exceptions import (
     DelegaRateLimitError,
 )
 from .models import Agent, Comment, Project, Task
+from ._version import USER_AGENT
 
 _DEFAULT_BASE_URL = "https://api.delega.dev"
 
@@ -43,6 +44,7 @@ class _AsyncHTTPClient:
                 "X-Agent-Key": api_key,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
+                "User-Agent": USER_AGENT,
             },
             timeout=timeout,
         )

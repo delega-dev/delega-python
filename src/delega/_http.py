@@ -8,6 +8,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Optional
 
+from ._version import USER_AGENT
 from .exceptions import (
     DelegaAPIError,
     DelegaAuthError,
@@ -64,6 +65,7 @@ class HTTPClient:
             "X-Agent-Key": self._api_key,
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "User-Agent": USER_AGENT,
         }
 
     def request(

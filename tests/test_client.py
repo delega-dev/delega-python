@@ -20,6 +20,7 @@ from delega import (
     Project,
     Task,
 )
+from delega._version import USER_AGENT
 
 
 def _mock_response(data: Any, status: int = 200) -> MagicMock:
@@ -388,6 +389,21 @@ class TestHeaders(unittest.TestCase):
         request = mock_urlopen.call_args[0][0]
         self.assertEqual(request.get_header("X-agent-key"), "dlg_mykey123")
         self.assertEqual(request.get_header("Content-type"), "application/json")
+        self.assertEqual(request.get_header("User-agent"), USER_AGENT)
+
+    @patch("delega.async_client._require_httpx")
+    def test_async_client_sets_user_agent(self, mock_require_httpx: MagicMock) -> None:
+        fake_httpx = MagicMock()
+        fake_async_client = MagicMock()
+        fake_httpx.AsyncClient = fake_async_client
+        mock_require_httpx.return_value = fake_httpx
+
+        from delega.async_client import AsyncDelega
+
+        AsyncDelega(api_key="dlg_async")
+
+        _, kwargs = fake_async_client.call_args
+        self.assertEqual(kwargs["headers"]["User-Agent"], USER_AGENT)
 
 
 class TestModels(unittest.TestCase):
