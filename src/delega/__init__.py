@@ -1,5 +1,6 @@
 """Delega Python SDK - Official client for the Delega API."""
 
+from ._version import __version__
 from .client import Delega
 from .exceptions import (
     DelegaAPIError,
@@ -10,8 +11,6 @@ from .exceptions import (
 )
 from .models import Agent, Comment, Project, Task
 from .webhooks import verify_webhook
-
-__version__ = "0.1.2"
 
 __all__ = [
     "Agent",
