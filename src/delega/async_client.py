@@ -13,7 +13,7 @@ from .exceptions import (
     DelegaNotFoundError,
     DelegaRateLimitError,
 )
-from .models import Agent, Comment, Project, Task
+from .models import Agent, Comment, DedupResult, DelegationChain, Project, Task
 from ._version import USER_AGENT
 
 _DEFAULT_BASE_URL = "https://api.delega.dev"
@@ -48,6 +48,12 @@ class _AsyncHTTPClient:
             },
             timeout=timeout,
         )
+
+    @property
+    def path_prefix(self) -> str:
+        """Return the API namespace path ("/v1" for hosted, "/api" for self-hosted)."""
+        import urllib.parse
+        return urllib.parse.urlparse(self._base_url).path or ""
 
     async def request(
         self,
@@ -201,15 +207,73 @@ class _AsyncTasksNamespace:
         *,
         description: Optional[str] = None,
         priority: Optional[int] = None,
+        project_id: Optional[str] = None,
+        labels: Optional[list[str]] = None,
+        due_date: Optional[str] = None,
+        assigned_to_agent_id: Optional[str] = None,
     ) -> Task:
-        """Create a delegated sub-task under a parent task."""
+        """Create a delegated child task under a parent.
+
+        The parent's ``status`` flips to ``"delegated"``. Use this — not
+        ``assign()`` — for multi-agent handoffs so the parent/child
+        accountability chain is recorded.
+        """
         body: dict[str, Any] = {"content": content}
         if description is not None:
             body["description"] = description
         if priority is not None:
             body["priority"] = priority
+        if project_id is not None:
+            body["project_id"] = project_id
+        if labels is not None:
+            body["labels"] = labels
+        if due_date is not None:
+            body["due_date"] = due_date
+        if assigned_to_agent_id is not None:
+            body["assigned_to_agent_id"] = assigned_to_agent_id
         data = await self._http.post(f"/tasks/{parent_task_id}/delegate", body=body)
         return Task.from_dict(data)
+
+    async def assign(self, task_id: str, agent_id: Optional[str]) -> Task:
+        """Assign a task to an agent (or ``None`` to unassign)."""
+        data = await self._http.put(
+            f"/tasks/{task_id}", body={"assigned_to_agent_id": agent_id}
+        )
+        return Task.from_dict(data)
+
+    async def chain(self, task_id: str) -> DelegationChain:
+        """Get the full parent/child delegation chain for a task."""
+        data = await self._http.get(f"/tasks/{task_id}/chain")
+        return DelegationChain.from_dict(data)
+
+    async def update_context(
+        self, task_id: str, context: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Deep-merge keys into a task's persistent context blob.
+
+        Existing keys are preserved; supplied keys are added or overwritten.
+        """
+        data = await self._http.patch(f"/tasks/{task_id}/context", body=context)
+        if isinstance(data, dict) and "content" in data and "id" in data:
+            raw_ctx = data.get("context") or {}
+            if isinstance(raw_ctx, str):
+                import json as _json
+                try:
+                    raw_ctx = _json.loads(raw_ctx) if raw_ctx.strip() else {}
+                except Exception:
+                    raw_ctx = {}
+            return raw_ctx if isinstance(raw_ctx, dict) else {}
+        return data if isinstance(data, dict) else {}
+
+    async def find_duplicates(
+        self, content: str, *, threshold: Optional[float] = None
+    ) -> DedupResult:
+        """Check whether content is similar to existing open tasks."""
+        body: dict[str, Any] = {"content": content}
+        if threshold is not None:
+            body["threshold"] = threshold
+        data = await self._http.post("/tasks/dedup", body=body)
+        return DedupResult.from_dict(data)
 
     async def add_comment(self, task_id: str, content: str) -> Comment:
         """Add a comment to a task."""
@@ -368,7 +432,17 @@ class AsyncDelega:
         return await self._http.get("/agent/me")  # type: ignore[no-any-return]
 
     async def usage(self) -> dict[str, Any]:
-        """Get API usage information."""
+        """Get quota and rate-limit information for the current plan.
+
+        Hosted API only (``api.delega.dev``). Self-hosted deployments
+        will raise :class:`DelegaError` before making a request.
+        """
+        if self._http.path_prefix != "/v1":
+            raise DelegaError(
+                "usage() is only available on the hosted Delega API "
+                "(api.delega.dev). Self-hosted deployments do not expose "
+                "a usage endpoint."
+            )
         return await self._http.get("/usage")  # type: ignore[no-any-return]
 
     async def aclose(self) -> None:

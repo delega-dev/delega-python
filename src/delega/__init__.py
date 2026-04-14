@@ -9,19 +9,30 @@ from .exceptions import (
     DelegaNotFoundError,
     DelegaRateLimitError,
 )
-from .models import Agent, Comment, Project, Task
+from .models import (
+    Agent,
+    Comment,
+    DedupResult,
+    DelegationChain,
+    DuplicateMatch,
+    Project,
+    Task,
+)
 from .webhooks import verify_webhook
 
 __all__ = [
     "Agent",
     "AsyncDelega",
     "Comment",
+    "DedupResult",
     "Delega",
     "DelegaAPIError",
     "DelegaAuthError",
     "DelegaError",
     "DelegaNotFoundError",
     "DelegaRateLimitError",
+    "DelegationChain",
+    "DuplicateMatch",
     "Project",
     "Task",
     "verify_webhook",

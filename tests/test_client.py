@@ -11,12 +11,14 @@ from unittest.mock import MagicMock, patch
 from delega import (
     Agent,
     Comment,
+    DedupResult,
     Delega,
     DelegaAPIError,
     DelegaAuthError,
     DelegaError,
     DelegaNotFoundError,
     DelegaRateLimitError,
+    DelegationChain,
     Project,
     Task,
 )
@@ -233,6 +235,128 @@ class TestTasksMethods(unittest.TestCase):
         self.assertEqual(len(comments), 2)
         self.assertIsInstance(comments[0], Comment)
 
+    # ── 1.2.0 coordination methods ──
+
+    @patch("urllib.request.urlopen")
+    def test_delegate_task_with_assignee(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "id": "t_child",
+            "content": "Child",
+            "parent_task_id": "t1",
+            "root_task_id": "t1",
+            "delegation_depth": 1,
+            "status": "open",
+            "assigned_to_agent_id": "a2",
+        })
+        task = self.client.tasks.delegate(
+            "t1", "Child", assigned_to_agent_id="a2", priority=2
+        )
+        self.assertEqual(task.parent_task_id, "t1")
+        self.assertEqual(task.delegation_depth, 1)
+        self.assertEqual(task.assigned_to_agent_id, "a2")
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/tasks/t1/delegate"))
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(body["assigned_to_agent_id"], "a2")
+        self.assertEqual(body["priority"], 2)
+
+    @patch("urllib.request.urlopen")
+    def test_assign_task(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "id": "t1",
+            "content": "x",
+            "assigned_to_agent_id": "a5",
+        })
+        task = self.client.tasks.assign("t1", "a5")
+        self.assertEqual(task.assigned_to_agent_id, "a5")
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/tasks/t1"))
+        self.assertEqual(request.get_method(), "PUT")
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(body, {"assigned_to_agent_id": "a5"})
+
+    @patch("urllib.request.urlopen")
+    def test_assign_task_unassign(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({"id": "t1", "content": "x"})
+        self.client.tasks.assign("t1", None)
+        body = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertIsNone(body["assigned_to_agent_id"])
+
+    @patch("urllib.request.urlopen")
+    def test_chain_hosted_shape(self, mock_urlopen: MagicMock) -> None:
+        # Hosted returns {root_id, chain, ...}.
+        mock_urlopen.return_value = _mock_response({
+            "root_id": "abc",
+            "chain": [{"id": "abc", "content": "root", "delegation_depth": 0}],
+            "depth": 0,
+            "completed_count": 0,
+            "total_count": 1,
+        })
+        chain = self.client.tasks.chain("abc")
+        self.assertIsInstance(chain, DelegationChain)
+        self.assertEqual(chain.root_id, "abc")
+        self.assertEqual(len(chain.chain), 1)
+        self.assertEqual(chain.chain[0].id, "abc")
+
+    @patch("urllib.request.urlopen")
+    def test_chain_self_hosted_shape(self, mock_urlopen: MagicMock) -> None:
+        # Self-hosted returns {root: Task, chain, ...} with no root_id.
+        mock_urlopen.return_value = _mock_response({
+            "root": {"id": 42, "content": "root"},
+            "chain": [{"id": 42, "content": "root", "delegation_depth": 0}],
+            "depth": 0,
+            "completed_count": 0,
+            "total_count": 1,
+        })
+        chain = self.client.tasks.chain("42")
+        # Client layer normalizes to root_id.
+        self.assertEqual(chain.root_id, "42")
+
+    @patch("urllib.request.urlopen")
+    def test_update_context_hosted_bare_dict(self, mock_urlopen: MagicMock) -> None:
+        # Hosted returns the merged context dict.
+        mock_urlopen.return_value = _mock_response({"step": "done", "count": 2})
+        merged = self.client.tasks.update_context("t1", {"count": 2})
+        self.assertEqual(merged, {"step": "done", "count": 2})
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/tasks/t1/context"))
+        self.assertEqual(request.get_method(), "PATCH")
+
+    @patch("urllib.request.urlopen")
+    def test_update_context_self_hosted_full_task(self, mock_urlopen: MagicMock) -> None:
+        # Self-hosted returns the full Task; we extract just the context.
+        mock_urlopen.return_value = _mock_response({
+            "id": 42,
+            "content": "x",
+            "completed": False,
+            "context": {"step": "done", "count": 2},
+        })
+        merged = self.client.tasks.update_context("42", {"count": 2})
+        self.assertEqual(merged, {"step": "done", "count": 2})
+
+    @patch("urllib.request.urlopen")
+    def test_find_duplicates(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "has_duplicates": True,
+            "matches": [
+                {"task_id": "abc", "content": "research pricing", "score": 0.85},
+            ],
+        })
+        result = self.client.tasks.find_duplicates("Research pricing", threshold=0.7)
+        self.assertIsInstance(result, DedupResult)
+        self.assertTrue(result.has_duplicates)
+        self.assertEqual(len(result.matches), 1)
+        self.assertEqual(result.matches[0].score, 0.85)
+        body = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertEqual(body, {"content": "Research pricing", "threshold": 0.7})
+
+    @patch("urllib.request.urlopen")
+    def test_find_duplicates_no_matches(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({"has_duplicates": False, "matches": []})
+        result = self.client.tasks.find_duplicates("unique content")
+        self.assertFalse(result.has_duplicates)
+        self.assertEqual(result.matches, [])
+
 
 class TestAgentsMethods(unittest.TestCase):
     def setUp(self) -> None:
@@ -330,10 +454,29 @@ class TestTopLevelMethods(unittest.TestCase):
         self.assertTrue(request.full_url.endswith("/v1/agent/me"))
 
     @patch("urllib.request.urlopen")
-    def test_usage(self, mock_urlopen: MagicMock) -> None:
-        mock_urlopen.return_value = _mock_response({"requests": 42})
+    def test_usage_hosted(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "plan": "free",
+            "task_count_month": 42,
+            "task_limit": 1000,
+            "rate_limit_rpm": 60,
+        })
         result = self.client.usage()
-        self.assertEqual(result["requests"], 42)
+        self.assertEqual(result["plan"], "free")
+        request = mock_urlopen.call_args[0][0]
+        # Post-0.2.0 bug fix: was hitting /stats, now correctly /usage.
+        self.assertTrue(request.full_url.endswith("/v1/usage"))
+
+    @patch("urllib.request.urlopen")
+    def test_usage_self_hosted_raises_before_fetch(
+        self, mock_urlopen: MagicMock
+    ) -> None:
+        client = Delega(base_url="http://127.0.0.1:18890", api_key="dlg_test")
+        with self.assertRaises(DelegaError) as ctx:
+            client.usage()
+        self.assertIn("only available on the hosted", str(ctx.exception))
+        # Critical: no HTTP call should have been made.
+        mock_urlopen.assert_not_called()
 
 
 class TestErrorHandling(unittest.TestCase):
