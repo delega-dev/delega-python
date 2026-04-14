@@ -453,7 +453,9 @@ class Delega:
 
     Args:
         api_key: API key for authentication. If not provided, reads from
-            the ``DELEGA_API_KEY`` environment variable.
+            the ``DELEGA_API_KEY`` environment variable, falling back to
+            ``DELEGA_AGENT_KEY`` for cross-client consistency with the
+            ``@delega-dev/mcp`` package.
         base_url: Base URL of the Delega API. Defaults to
             ``https://api.delega.dev`` (normalized to ``/v1``). For
             self-hosted deployments, use ``http://localhost:18890`` or an
@@ -471,10 +473,18 @@ class Delega:
         base_url: str = _DEFAULT_BASE_URL,
         timeout: int = 30,
     ) -> None:
-        resolved_key = api_key or os.environ.get("DELEGA_API_KEY")
+        # Accept both env vars so agents configuring the MCP (primary:
+        # DELEGA_AGENT_KEY) and this SDK (primary: DELEGA_API_KEY) in one
+        # shell don't need to set both. DELEGA_API_KEY wins when both set.
+        resolved_key = (
+            api_key
+            or os.environ.get("DELEGA_API_KEY")
+            or os.environ.get("DELEGA_AGENT_KEY")
+        )
         if not resolved_key:
             raise DelegaError(
-                "No API key provided. Pass api_key= or set the DELEGA_API_KEY environment variable."
+                "No API key provided. Pass api_key= or set DELEGA_API_KEY "
+                "(or DELEGA_AGENT_KEY) in the environment."
             )
         self._http = HTTPClient(base_url=base_url, api_key=resolved_key, timeout=timeout)
         self.tasks = _TasksNamespace(self._http)
