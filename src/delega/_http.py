@@ -60,6 +60,11 @@ class HTTPClient:
         self._api_key = api_key
         self._timeout = timeout
 
+    @property
+    def path_prefix(self) -> str:
+        """Return the API namespace path ("/v1" for hosted, "/api" for self-hosted)."""
+        return urllib.parse.urlparse(self._base_url).path or ""
+
     def _headers(self) -> dict[str, str]:
         return {
             "X-Agent-Key": self._api_key,
