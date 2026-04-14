@@ -1,0 +1,272 @@
+"""Async client tests using httpx.MockTransport.
+
+Mirrors the sync tests in test_client.py for the 1.2.0 coordination methods
+(assign, delegate, chain, update_context, find_duplicates) plus the 0.2.0
+usage() gate. Run with:
+
+    pytest tests/test_async_client.py
+
+Requires httpx + pytest-asyncio (both in dev deps).
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import pytest
+
+import httpx
+
+from delega import (
+    AsyncDelega,
+    DedupResult,
+    DelegaError,
+    DelegationChain,
+)
+
+
+def _json_handler(payload: Any, *, status: int = 200):
+    """Return an httpx request handler that replies with a fixed JSON payload."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json=payload)
+
+    return handler
+
+
+def _recording_handler(payload: Any, recorded: list[httpx.Request]):
+    """Record every incoming request into ``recorded`` and reply with payload."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json=payload)
+
+    return handler
+
+
+def _make_client(handler) -> AsyncDelega:
+    """Build an AsyncDelega wired to an httpx.MockTransport."""
+    client = AsyncDelega(api_key="dlg_test", base_url="https://api.delega.dev")
+    # Swap the transport for our mock — keeps normalize_base_url handling intact.
+    transport = httpx.MockTransport(handler)
+    client._http._client = httpx.AsyncClient(
+        base_url=client._http._base_url,
+        headers={"X-Agent-Key": "dlg_test", "User-Agent": "test"},
+        transport=transport,
+    )
+    return client
+
+
+@pytest.mark.asyncio
+async def test_async_delegate_with_assignee():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler(
+            {
+                "id": "t_child",
+                "content": "Child",
+                "parent_task_id": "t1",
+                "root_task_id": "t1",
+                "delegation_depth": 1,
+                "status": "open",
+                "assigned_to_agent_id": "a2",
+            },
+            recorded,
+        )
+    )
+    async with client:
+        task = await client.tasks.delegate(
+            "t1", "Child", assigned_to_agent_id="a2", priority=2
+        )
+    assert task.parent_task_id == "t1"
+    assert task.delegation_depth == 1
+    assert task.assigned_to_agent_id == "a2"
+    assert recorded[0].url.path.endswith("/v1/tasks/t1/delegate")
+    body = json.loads(recorded[0].content.decode())
+    assert body["assigned_to_agent_id"] == "a2"
+    assert body["priority"] == 2
+
+
+@pytest.mark.asyncio
+async def test_async_assign_task():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler(
+            {"id": "t1", "content": "x", "assigned_to_agent_id": "a5"}, recorded
+        )
+    )
+    async with client:
+        task = await client.tasks.assign("t1", "a5")
+    assert task.assigned_to_agent_id == "a5"
+    assert recorded[0].method == "PUT"
+    body = json.loads(recorded[0].content.decode())
+    assert body == {"assigned_to_agent_id": "a5"}
+
+
+@pytest.mark.asyncio
+async def test_async_assign_unassign():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler({"id": "t1", "content": "x"}, recorded)
+    )
+    async with client:
+        await client.tasks.assign("t1", None)
+    body = json.loads(recorded[0].content.decode())
+    assert body["assigned_to_agent_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_async_chain_hosted_shape():
+    client = _make_client(
+        _json_handler(
+            {
+                "root_id": "abc",
+                "chain": [
+                    {"id": "abc", "content": "root", "delegation_depth": 0}
+                ],
+                "depth": 0,
+                "completed_count": 0,
+                "total_count": 1,
+            }
+        )
+    )
+    async with client:
+        chain = await client.tasks.chain("abc")
+    assert isinstance(chain, DelegationChain)
+    assert chain.root_id == "abc"
+    assert len(chain.chain) == 1
+
+
+@pytest.mark.asyncio
+async def test_async_chain_self_hosted_shape():
+    """Self-hosted returns {root: Task} without root_id — client normalizes."""
+    client = _make_client(
+        _json_handler(
+            {
+                "root": {"id": 42, "content": "root"},
+                "chain": [
+                    {"id": 42, "content": "root", "delegation_depth": 0}
+                ],
+                "depth": 0,
+                "completed_count": 0,
+                "total_count": 1,
+            }
+        )
+    )
+    async with client:
+        chain = await client.tasks.chain("42")
+    assert chain.root_id == "42"
+
+
+@pytest.mark.asyncio
+async def test_async_update_context_hosted_bare_dict():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler({"step": "done", "count": 2}, recorded)
+    )
+    async with client:
+        merged = await client.tasks.update_context("t1", {"count": 2})
+    assert merged == {"step": "done", "count": 2}
+    assert recorded[0].method == "PATCH"
+    assert recorded[0].url.path.endswith("/v1/tasks/t1/context")
+
+
+@pytest.mark.asyncio
+async def test_async_update_context_self_hosted_full_task():
+    client = _make_client(
+        _json_handler(
+            {
+                "id": 42,
+                "content": "x",
+                "completed": False,
+                "context": {"step": "done", "count": 2},
+            }
+        )
+    )
+    async with client:
+        merged = await client.tasks.update_context("42", {"count": 2})
+    assert merged == {"step": "done", "count": 2}
+
+
+@pytest.mark.asyncio
+async def test_async_find_duplicates():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler(
+            {
+                "has_duplicates": True,
+                "matches": [
+                    {
+                        "task_id": "abc",
+                        "content": "research pricing",
+                        "score": 0.85,
+                    }
+                ],
+            },
+            recorded,
+        )
+    )
+    async with client:
+        result = await client.tasks.find_duplicates(
+            "Research pricing", threshold=0.7
+        )
+    assert isinstance(result, DedupResult)
+    assert result.has_duplicates
+    assert len(result.matches) == 1
+    assert result.matches[0].score == 0.85
+    body = json.loads(recorded[0].content.decode())
+    assert body == {"content": "Research pricing", "threshold": 0.7}
+
+
+@pytest.mark.asyncio
+async def test_async_usage_hosted():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler(
+            {
+                "plan": "free",
+                "task_count_month": 42,
+                "task_limit": 1000,
+                "rate_limit_rpm": 60,
+            },
+            recorded,
+        )
+    )
+    async with client:
+        result = await client.usage()
+    assert result["plan"] == "free"
+    assert recorded[0].url.path.endswith("/v1/usage")
+
+
+@pytest.mark.asyncio
+async def test_async_usage_self_hosted_raises_before_fetch():
+    """Self-hosted should raise DelegaError without touching the transport."""
+    recorded: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json={})
+
+    client = AsyncDelega(
+        api_key="dlg_test", base_url="http://127.0.0.1:18890"
+    )
+    client._http._client = httpx.AsyncClient(
+        base_url=client._http._base_url,
+        headers={"X-Agent-Key": "dlg_test"},
+        transport=httpx.MockTransport(handler),
+    )
+    async with client:
+        with pytest.raises(DelegaError) as ctx:
+            await client.usage()
+    assert "only available on the hosted" in str(ctx.value)
+    assert not recorded, "transport should not have been called"
+
+
+@pytest.mark.asyncio
+async def test_async_accepts_DELEGA_AGENT_KEY_fallback(monkeypatch):
+    """Agent-side env-var consistency with @delega-dev/mcp."""
+    monkeypatch.delenv("DELEGA_API_KEY", raising=False)
+    monkeypatch.setenv("DELEGA_AGENT_KEY", "dlg_from_agent_env")
+    client = AsyncDelega()
+    assert client._http._api_key == "dlg_from_agent_env"

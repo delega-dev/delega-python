@@ -69,6 +69,21 @@ class TestClientInit(unittest.TestCase):
         client = Delega(api_key="dlg_direct")
         self.assertEqual(client._http._api_key, "dlg_direct")
 
+    def test_api_key_falls_back_to_DELEGA_AGENT_KEY(self) -> None:
+        """Cross-client consistency with @delega-dev/mcp (which primaries DELEGA_AGENT_KEY)."""
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ["DELEGA_AGENT_KEY"] = "dlg_from_agent_env"
+            client = Delega()
+            self.assertEqual(client._http._api_key, "dlg_from_agent_env")
+
+    def test_DELEGA_API_KEY_wins_over_DELEGA_AGENT_KEY(self) -> None:
+        """When both env vars are set, DELEGA_API_KEY is the primary."""
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ["DELEGA_API_KEY"] = "dlg_primary"
+            os.environ["DELEGA_AGENT_KEY"] = "dlg_fallback"
+            client = Delega()
+            self.assertEqual(client._http._api_key, "dlg_primary")
+
     def test_remote_base_url_defaults_to_v1_namespace(self) -> None:
         client = Delega(api_key="dlg_test", base_url="https://custom.host")
         self.assertEqual(client._http._base_url, "https://custom.host/v1")
