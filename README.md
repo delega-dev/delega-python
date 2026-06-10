@@ -81,6 +81,31 @@ client.tasks.add_comment("task_id", "Looks good, shipping it")
 comments = client.tasks.list_comments("task_id")
 ```
 
+### Claiming (work queues)
+
+Worker agents can pull tasks from a shared queue with `claim()`. Claims are atomic (no two workers get the same task) and ordered by priority, then creation time. A claim holds a lease — extend it with `heartbeat()` while you work, release it with `release()` if you can't finish, or `complete()` the task when done:
+
+```python
+import time
+
+while True:
+    task = client.tasks.claim(labels=["worker"], lease_seconds=300)
+    if task is None:
+        time.sleep(10)  # queue empty — back off (or break)
+        continue
+
+    try:
+        # ... do the work, periodically extending the lease:
+        client.tasks.heartbeat(task.id, lease_seconds=300)
+        # ...
+        client.tasks.complete(task.id)
+    except Exception:
+        client.tasks.release(task.id)  # hand it back to the queue
+        raise
+```
+
+`claim()` returns `None` when no claimable task is available. `lease_seconds` accepts 30-3600 (default 300); if the lease expires without a heartbeat, the task becomes claimable again. Claiming sets `status` to `"claimed"` but never touches `assigned_to_agent_id`. Filter claimed/unclaimed tasks with `client.tasks.list(claimed=True)` or `claimed=False`.
+
 ## Agents
 
 ```python
@@ -158,7 +183,9 @@ except DelegaError as e:
 
 All resource methods return typed dataclasses:
 
-- `Task` - id, content, description, priority, labels, due_date, completed, project_id, parent_id, created_at, updated_at
+- `Task` - id, content, description, priority, labels, due_date, completed, project_id, parent_id, claimed_by_agent_id, claimed_at, lease_expires_at, created_at, updated_at
+
+The claiming fields (`claimed_by_agent_id`, `claimed_at`, `lease_expires_at`) are set while a task is claimed via `tasks.claim()` and are `None` otherwise. A claimed task has `status == "claimed"`.
 - `Comment` - id, task_id, content, created_at
 - `Agent` - id, name, display_name, description, api_key, created_at, updated_at
 

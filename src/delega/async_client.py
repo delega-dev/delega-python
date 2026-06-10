@@ -133,6 +133,7 @@ class _AsyncTasksNamespace:
         due_after: Optional[str] = None,
         due_before: Optional[str] = None,
         completed: Optional[bool] = None,
+        claimed: Optional[bool] = None,
     ) -> list[Task]:
         """List tasks with optional filters."""
         params: dict[str, Any] = {
@@ -144,6 +145,8 @@ class _AsyncTasksNamespace:
             "due_after": due_after,
             "due_before": due_before,
             "completed": completed,
+            # Contract: ?claimed=true|false (lowercase).
+            "claimed": None if claimed is None else ("true" if claimed else "false"),
         }
         data = await self._http.get("/tasks", params=params)
         return [Task.from_dict(t) for t in data]
@@ -274,6 +277,60 @@ class _AsyncTasksNamespace:
             body["threshold"] = threshold
         data = await self._http.post("/tasks/dedup", body=body)
         return DedupResult.from_dict(data)
+
+    async def claim(
+        self,
+        *,
+        project_id: Optional[str] = None,
+        labels: Optional[list[str]] = None,
+        lease_seconds: Optional[int] = None,
+    ) -> Optional[Task]:
+        """Atomically claim the next claimable task from the queue.
+
+        Tasks are claimed in priority order (priority ASC, then
+        created_at ASC). The claim holds a lease; call ``heartbeat()``
+        to extend it while working, and ``release()`` to give the task
+        back to the queue. Claiming never modifies
+        ``assigned_to_agent_id``.
+
+        Returns:
+            The claimed :class:`Task`, or ``None`` if no claimable task
+            is available.
+        """
+        body: dict[str, Any] = {}
+        if project_id is not None:
+            body["project_id"] = project_id
+        if labels is not None:
+            body["labels"] = labels
+        if lease_seconds is not None:
+            body["lease_seconds"] = lease_seconds
+        data = await self._http.post("/tasks/claim", body=body)
+        task = data.get("task") if isinstance(data, dict) else None
+        if task is None:
+            return None
+        return Task.from_dict(task)
+
+    async def heartbeat(
+        self, task_id: str, *, lease_seconds: Optional[int] = None
+    ) -> Task:
+        """Extend the lease on a task this agent has claimed.
+
+        Raises a 409 :class:`DelegaAPIError` if the caller does not
+        hold an active claim on the task.
+        """
+        body: dict[str, Any] = {}
+        if lease_seconds is not None:
+            body["lease_seconds"] = lease_seconds
+        data = await self._http.post(f"/tasks/{task_id}/heartbeat", body=body)
+        return Task.from_dict(data)
+
+    async def release(self, task_id: str) -> Task:
+        """Release a claimed task back to the queue (status ``"open"``).
+
+        Only the claim holder or an admin may release.
+        """
+        data = await self._http.post(f"/tasks/{task_id}/release")
+        return Task.from_dict(data)
 
     async def add_comment(self, task_id: str, content: str) -> Comment:
         """Add a comment to a task."""

@@ -372,6 +372,93 @@ class TestTasksMethods(unittest.TestCase):
         self.assertFalse(result.has_duplicates)
         self.assertEqual(result.matches, [])
 
+    # ── 0.3.0 claiming methods ──
+
+    @patch("urllib.request.urlopen")
+    def test_claim_task(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "task": {
+                "id": "t1",
+                "content": "Queued work",
+                "status": "claimed",
+                "claimed_by_agent_id": "a1",
+                "claimed_at": "2026-06-10T00:00:00Z",
+                "lease_expires_at": "2026-06-10T00:05:00Z",
+            }
+        })
+        task = self.client.tasks.claim(
+            project_id="p1", labels=["worker"], lease_seconds=120
+        )
+        self.assertIsInstance(task, Task)
+        assert task is not None
+        self.assertEqual(task.status, "claimed")
+        self.assertEqual(task.claimed_by_agent_id, "a1")
+        self.assertEqual(task.claimed_at, "2026-06-10T00:00:00Z")
+        self.assertEqual(task.lease_expires_at, "2026-06-10T00:05:00Z")
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/tasks/claim"))
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(
+            body, {"project_id": "p1", "labels": ["worker"], "lease_seconds": 120}
+        )
+
+    @patch("urllib.request.urlopen")
+    def test_claim_task_empty_queue_returns_none(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({"task": None})
+        task = self.client.tasks.claim()
+        self.assertIsNone(task)
+        request = mock_urlopen.call_args[0][0]
+        # No optional filters supplied — body should be empty JSON.
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(body, {})
+
+    @patch("urllib.request.urlopen")
+    def test_heartbeat_task(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "id": "t1",
+            "content": "Queued work",
+            "status": "claimed",
+            "claimed_by_agent_id": "a1",
+            "lease_expires_at": "2026-06-10T00:10:00Z",
+        })
+        task = self.client.tasks.heartbeat("t1", lease_seconds=600)
+        self.assertEqual(task.lease_expires_at, "2026-06-10T00:10:00Z")
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/tasks/t1/heartbeat"))
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(body, {"lease_seconds": 600})
+
+    @patch("urllib.request.urlopen")
+    def test_release_task(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "id": "t1",
+            "content": "Queued work",
+            "status": "open",
+            "claimed_by_agent_id": None,
+            "claimed_at": None,
+            "lease_expires_at": None,
+        })
+        task = self.client.tasks.release("t1")
+        self.assertEqual(task.status, "open")
+        self.assertIsNone(task.claimed_by_agent_id)
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/tasks/t1/release"))
+
+    @patch("urllib.request.urlopen")
+    def test_list_tasks_claimed_filter(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response([])
+        self.client.tasks.list(claimed=True)
+        request = mock_urlopen.call_args[0][0]
+        self.assertIn("claimed=true", request.full_url)
+
+        self.client.tasks.list(claimed=False)
+        request = mock_urlopen.call_args[0][0]
+        self.assertIn("claimed=false", request.full_url)
+
+        self.client.tasks.list()
+        request = mock_urlopen.call_args[0][0]
+        self.assertNotIn("claimed", request.full_url)
+
 
 class TestAgentsMethods(unittest.TestCase):
     def setUp(self) -> None:

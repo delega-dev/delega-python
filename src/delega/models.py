@@ -26,6 +26,9 @@ class Task:
     assigned_to_agent_id: Optional[str] = None
     created_by_agent_id: Optional[str] = None
     completed_by_agent_id: Optional[str] = None
+    claimed_by_agent_id: Optional[str] = None
+    claimed_at: Optional[str] = None
+    lease_expires_at: Optional[str] = None
     context: Optional[dict[str, Any]] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -59,6 +62,9 @@ class Task:
             assigned_to_agent_id=data.get("assigned_to_agent_id"),
             created_by_agent_id=data.get("created_by_agent_id"),
             completed_by_agent_id=data.get("completed_by_agent_id"),
+            claimed_by_agent_id=data.get("claimed_by_agent_id"),
+            claimed_at=data.get("claimed_at"),
+            lease_expires_at=data.get("lease_expires_at"),
             context=raw_ctx if isinstance(raw_ctx, dict) else None,
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),

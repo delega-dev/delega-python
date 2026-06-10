@@ -23,6 +23,7 @@ from delega import (
     DedupResult,
     DelegaError,
     DelegationChain,
+    Task,
 )
 
 
@@ -217,6 +218,109 @@ async def test_async_find_duplicates():
     assert result.matches[0].score == 0.85
     body = json.loads(recorded[0].content.decode())
     assert body == {"content": "Research pricing", "threshold": 0.7}
+
+
+@pytest.mark.asyncio
+async def test_async_claim_task():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler(
+            {
+                "task": {
+                    "id": "t1",
+                    "content": "Queued work",
+                    "status": "claimed",
+                    "claimed_by_agent_id": "a1",
+                    "claimed_at": "2026-06-10T00:00:00Z",
+                    "lease_expires_at": "2026-06-10T00:05:00Z",
+                }
+            },
+            recorded,
+        )
+    )
+    async with client:
+        task = await client.tasks.claim(
+            project_id="p1", labels=["worker"], lease_seconds=120
+        )
+    assert isinstance(task, Task)
+    assert task.status == "claimed"
+    assert task.claimed_by_agent_id == "a1"
+    assert task.claimed_at == "2026-06-10T00:00:00Z"
+    assert task.lease_expires_at == "2026-06-10T00:05:00Z"
+    assert recorded[0].url.path.endswith("/v1/tasks/claim")
+    body = json.loads(recorded[0].content.decode())
+    assert body == {"project_id": "p1", "labels": ["worker"], "lease_seconds": 120}
+
+
+@pytest.mark.asyncio
+async def test_async_claim_task_empty_queue_returns_none():
+    recorded: list[httpx.Request] = []
+    client = _make_client(_recording_handler({"task": None}, recorded))
+    async with client:
+        task = await client.tasks.claim()
+    assert task is None
+    # No optional filters supplied — body should be empty JSON.
+    body = json.loads(recorded[0].content.decode())
+    assert body == {}
+
+
+@pytest.mark.asyncio
+async def test_async_heartbeat_task():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler(
+            {
+                "id": "t1",
+                "content": "Queued work",
+                "status": "claimed",
+                "claimed_by_agent_id": "a1",
+                "lease_expires_at": "2026-06-10T00:10:00Z",
+            },
+            recorded,
+        )
+    )
+    async with client:
+        task = await client.tasks.heartbeat("t1", lease_seconds=600)
+    assert task.lease_expires_at == "2026-06-10T00:10:00Z"
+    assert recorded[0].url.path.endswith("/v1/tasks/t1/heartbeat")
+    body = json.loads(recorded[0].content.decode())
+    assert body == {"lease_seconds": 600}
+
+
+@pytest.mark.asyncio
+async def test_async_release_task():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler(
+            {
+                "id": "t1",
+                "content": "Queued work",
+                "status": "open",
+                "claimed_by_agent_id": None,
+                "claimed_at": None,
+                "lease_expires_at": None,
+            },
+            recorded,
+        )
+    )
+    async with client:
+        task = await client.tasks.release("t1")
+    assert task.status == "open"
+    assert task.claimed_by_agent_id is None
+    assert recorded[0].url.path.endswith("/v1/tasks/t1/release")
+
+
+@pytest.mark.asyncio
+async def test_async_list_tasks_claimed_filter():
+    recorded: list[httpx.Request] = []
+    client = _make_client(_recording_handler([], recorded))
+    async with client:
+        await client.tasks.list(claimed=True)
+        await client.tasks.list(claimed=False)
+        await client.tasks.list()
+    assert recorded[0].url.params["claimed"] == "true"
+    assert recorded[1].url.params["claimed"] == "false"
+    assert "claimed" not in recorded[2].url.params
 
 
 @pytest.mark.asyncio
