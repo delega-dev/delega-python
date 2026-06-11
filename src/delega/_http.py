@@ -136,13 +136,25 @@ class HTTPClient:
         """Send a GET request."""
         return self.request("GET", path, params=params)
 
-    def post(self, path: str, *, body: Optional[dict[str, Any]] = None) -> Any:
+    def post(
+        self,
+        path: str,
+        *,
+        body: Optional[dict[str, Any]] = None,
+        params: Optional[dict[str, Any]] = None,
+    ) -> Any:
         """Send a POST request."""
-        return self.request("POST", path, body=body)
+        return self.request("POST", path, params=params, body=body)
 
-    def patch(self, path: str, *, body: Optional[dict[str, Any]] = None) -> Any:
+    def patch(
+        self,
+        path: str,
+        *,
+        body: Optional[dict[str, Any]] = None,
+        params: Optional[dict[str, Any]] = None,
+    ) -> Any:
         """Send a PATCH request."""
-        return self.request("PATCH", path, body=body)
+        return self.request("PATCH", path, params=params, body=body)
 
     def put(self, path: str, *, body: Optional[dict[str, Any]] = None) -> Any:
         """Send a PUT request."""

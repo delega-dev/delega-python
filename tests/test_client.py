@@ -701,5 +701,214 @@ class TestAsyncImport(unittest.TestCase):
         self.assertTrue(callable(AsyncDelega))
 
 
+class TestContextLinksState(unittest.TestCase):
+    """Tests for context provenance, task links, and session state (0.4.0)."""
+
+    def setUp(self) -> None:
+        self.client = Delega(api_key="dlg_test")
+
+    @patch("urllib.request.urlopen")
+    def test_update_context_versioned_wrapper(self, mock_urlopen: MagicMock) -> None:
+        """Hosted v1.8+ returns {context, version}; unwrap to the merged dict."""
+        mock_urlopen.return_value = _mock_response(
+            {"context": {"decision": "ship it", "files": ["a.py"]}, "version": 3}
+        )
+        merged = self.client.tasks.update_context("t1", {"decision": "ship it"})
+        self.assertEqual(merged, {"decision": "ship it", "files": ["a.py"]})
+
+    @patch("urllib.request.urlopen")
+    def test_update_context_source_and_expected_version(
+        self, mock_urlopen: MagicMock
+    ) -> None:
+        mock_urlopen.return_value = _mock_response({"context": {"k": 1}, "version": 5})
+        self.client.tasks.update_context(
+            "t1", {"k": 1}, source="agent_observed", expected_version=4
+        )
+        request = mock_urlopen.call_args[0][0]
+        self.assertIn("/v1/tasks/t1/context?", request.full_url)
+        self.assertIn("source=agent_observed", request.full_url)
+        self.assertIn("expected_version=4", request.full_url)
+
+    @patch("urllib.request.urlopen")
+    def test_get_context(self, mock_urlopen: MagicMock) -> None:
+        from delega import ContextSnapshot
+
+        mock_urlopen.return_value = _mock_response(
+            {"context": {"notes": "hello"}, "version": 2}
+        )
+        snap = self.client.tasks.get_context("t1")
+        self.assertIsInstance(snap, ContextSnapshot)
+        self.assertEqual(snap.context, {"notes": "hello"})
+        self.assertEqual(snap.version, 2)
+        self.assertIsNone(snap.provenance)
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/tasks/t1/context"))
+
+    @patch("urllib.request.urlopen")
+    def test_get_context_with_provenance(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "context": {"notes": "hello"},
+            "version": 2,
+            "provenance": {
+                "notes": {"source": "agent_observed", "author_agent_id": "a1"}
+            },
+        })
+        snap = self.client.tasks.get_context("t1", include_provenance=True)
+        assert snap.provenance is not None
+        self.assertEqual(snap.provenance["notes"]["source"], "agent_observed")
+        request = mock_urlopen.call_args[0][0]
+        self.assertIn("include=provenance", request.full_url)
+
+    @patch("urllib.request.urlopen")
+    def test_context_history(self, mock_urlopen: MagicMock) -> None:
+        from delega import ContextEntry, ContextHistory
+
+        mock_urlopen.return_value = _mock_response({
+            "entries": [
+                {
+                    "id": "ce2",
+                    "key": "notes",
+                    "value": {"step": 2},
+                    "version": 2,
+                    "source": "agent_inferred",
+                    "author_agent_id": "a1",
+                    "author_name": "Bot",
+                    "created_at": "2026-06-11T00:00:00Z",
+                    "superseded_by": None,
+                    "superseded_at": None,
+                },
+            ],
+            "next_cursor": "100",
+        })
+        history = self.client.tasks.context_history("t1", key="notes", limit=1)
+        self.assertIsInstance(history, ContextHistory)
+        self.assertEqual(len(history.entries), 1)
+        self.assertIsInstance(history.entries[0], ContextEntry)
+        self.assertEqual(history.entries[0].key, "notes")
+        self.assertEqual(history.entries[0].value, {"step": 2})
+        self.assertEqual(history.next_cursor, "100")
+        request = mock_urlopen.call_args[0][0]
+        self.assertIn("/v1/tasks/t1/context/history?", request.full_url)
+        self.assertIn("key=notes", request.full_url)
+        self.assertIn("limit=1", request.full_url)
+
+    @patch("urllib.request.urlopen")
+    def test_supersede_context(self, mock_urlopen: MagicMock) -> None:
+        from delega import ContextEntry
+
+        mock_urlopen.return_value = _mock_response({
+            "superseded": {
+                "id": "ce1",
+                "key": "notes",
+                "value": "old",
+                "version": 1,
+                "source": "agent_inferred",
+                "superseded_at": "2026-06-11T00:00:00Z",
+            }
+        })
+        entry = self.client.tasks.supersede_context("t1", "notes")
+        self.assertIsInstance(entry, ContextEntry)
+        self.assertEqual(entry.key, "notes")
+        self.assertEqual(entry.superseded_at, "2026-06-11T00:00:00Z")
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/tasks/t1/context/supersede"))
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(body, {"key": "notes"})
+
+    @patch("urllib.request.urlopen")
+    def test_set_state(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "id": "t1",
+            "content": "Work",
+            "session_state": "waiting_input",
+            "session_state_detail": "need API credentials",
+        })
+        task = self.client.tasks.set_state(
+            "t1", "waiting_input", detail="need API credentials"
+        )
+        self.assertEqual(task.session_state, "waiting_input")
+        self.assertEqual(task.session_state_detail, "need API credentials")
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/tasks/t1/state"))
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(
+            body, {"state": "waiting_input", "detail": "need API credentials"}
+        )
+
+    @patch("urllib.request.urlopen")
+    def test_add_link(self, mock_urlopen: MagicMock) -> None:
+        from delega import TaskLink
+
+        mock_urlopen.return_value = _mock_response({
+            "id": "lnk1",
+            "task_id": "t1",
+            "kind": "pr",
+            "repo": "acme/webapp",
+            "ref": "42",
+            "url": "https://github.com/acme/webapp/pull/42",
+        })
+        link = self.client.tasks.add_link(
+            "t1", "pr", "42", repo="acme/webapp",
+            url="https://github.com/acme/webapp/pull/42",
+        )
+        self.assertIsInstance(link, TaskLink)
+        self.assertEqual(link.kind, "pr")
+        self.assertEqual(link.repo, "acme/webapp")
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/tasks/t1/links"))
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(body["kind"], "pr")
+        self.assertEqual(body["ref"], "42")
+
+    @patch("urllib.request.urlopen")
+    def test_list_links(self, mock_urlopen: MagicMock) -> None:
+        from delega import TaskLink
+
+        mock_urlopen.return_value = _mock_response([
+            {"id": "lnk1", "task_id": "t1", "kind": "branch", "ref": "main"},
+            {"id": "lnk2", "task_id": "t1", "kind": "commit", "ref": "abc123"},
+        ])
+        links = self.client.tasks.list_links("t1")
+        self.assertEqual(len(links), 2)
+        self.assertIsInstance(links[0], TaskLink)
+        self.assertEqual(links[1].kind, "commit")
+
+    @patch("urllib.request.urlopen")
+    def test_delete_link(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({"ok": True})
+        result = self.client.tasks.delete_link("t1", "lnk1")
+        self.assertTrue(result)
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/tasks/t1/links/lnk1"))
+        self.assertEqual(request.get_method(), "DELETE")
+
+    @patch("urllib.request.urlopen")
+    def test_claim_specific_task(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "task": {"id": "t9", "content": "Targeted", "status": "claimed"}
+        })
+        task = self.client.tasks.claim(task_id="t9", lease_seconds=60)
+        assert task is not None
+        self.assertEqual(task.id, "t9")
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/tasks/t9/claim"))
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(body, {"lease_seconds": 60})
+
+    @patch("urllib.request.urlopen")
+    def test_task_model_parses_state_and_version(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "id": "t1",
+            "content": "Work",
+            "session_state": "working",
+            "accountable_agent_id": "a9",
+            "context_version": 7,
+        })
+        task = self.client.tasks.get("t1")
+        self.assertEqual(task.session_state, "working")
+        self.assertEqual(task.accountable_agent_id, "a9")
+        self.assertEqual(task.context_version, 7)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,10 +10,15 @@ from .exceptions import DelegaError
 from .models import (
     Agent,
     Comment,
+    ContextEntry,
+    ContextHistory,
+    ContextSnapshot,
     DedupResult,
     DelegationChain,
     Project,
     Task,
+    TaskLink,
+    _normalize_merged_context,
 )
 
 _DEFAULT_BASE_URL = "https://api.delega.dev"
@@ -231,7 +236,12 @@ class _TasksNamespace:
         return DelegationChain.from_dict(data)
 
     def update_context(
-        self, task_id: str, context: dict[str, Any]
+        self,
+        task_id: str,
+        context: dict[str, Any],
+        *,
+        source: Optional[str] = None,
+        expected_version: Optional[int] = None,
     ) -> dict[str, Any]:
         """Deep-merge keys into a task's persistent context blob.
 
@@ -242,25 +252,154 @@ class _TasksNamespace:
         Args:
             task_id: The task identifier.
             context: Keys to merge into the existing context.
+            source: Provenance attribution for this write — one of
+                ``"human_stated"``, ``"agent_inferred"``,
+                ``"agent_observed"``, ``"imported"`` (server default
+                ``agent_inferred``; ``human_stated``/``imported`` require
+                an admin key).
+            expected_version: Optimistic concurrency guard — the context
+                version from ``get_context()``. If the context changed
+                since that read, the write fails with a 409
+                :class:`DelegaAPIError` whose message includes the
+                current version.
 
         Returns:
             The merged context dict.
         """
-        # Hosted returns the bare merged context dict; self-hosted returns
-        # the full Task with a ``context`` field. Normalize to always
-        # return the merged context.
-        data = self._http.patch(f"/tasks/{task_id}/context", body=context)
-        if isinstance(data, dict) and "content" in data and "id" in data:
-            # Looks like a full Task.
-            raw_ctx = data.get("context") or {}
-            if isinstance(raw_ctx, str):
-                import json as _json
-                try:
-                    raw_ctx = _json.loads(raw_ctx) if raw_ctx.strip() else {}
-                except Exception:
-                    raw_ctx = {}
-            return raw_ctx if isinstance(raw_ctx, dict) else {}
-        return data if isinstance(data, dict) else {}
+        params: dict[str, Any] = {}
+        if source is not None:
+            params["source"] = source
+        if expected_version is not None:
+            params["expected_version"] = expected_version
+        data = self._http.patch(
+            f"/tasks/{task_id}/context", body=context, params=params or None
+        )
+        return _normalize_merged_context(data)
+
+    def get_context(
+        self, task_id: str, *, include_provenance: bool = False
+    ) -> ContextSnapshot:
+        """Read a task's persistent context blob and its version.
+
+        Args:
+            task_id: The task identifier.
+            include_provenance: When ``True``, also return per-key
+                author/source/version provenance for the live entries.
+        """
+        params = {"include": "provenance"} if include_provenance else None
+        data = self._http.get(f"/tasks/{task_id}/context", params=params)
+        return ContextSnapshot.from_dict(data)
+
+    def context_history(
+        self,
+        task_id: str,
+        *,
+        key: Optional[str] = None,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+    ) -> ContextHistory:
+        """Read the append-only provenance ledger for a task's context.
+
+        Args:
+            task_id: The task identifier.
+            key: Narrow history to one context key; omit for the newest
+                entries across all keys.
+            limit: Page size (server default 100, max 100).
+            cursor: Opaque cursor from a previous page's ``next_cursor``.
+        """
+        params: dict[str, Any] = {"key": key, "limit": limit, "cursor": cursor}
+        data = self._http.get(f"/tasks/{task_id}/context/history", params=params)
+        return ContextHistory.from_dict(data)
+
+    def supersede_context(self, task_id: str, key: str) -> ContextEntry:
+        """Mark the live context entry for ``key`` as superseded (stale).
+
+        The context value itself is not changed — this only records in the
+        provenance ledger that the entry should no longer be trusted.
+
+        Args:
+            task_id: The task identifier.
+            key: The context key to supersede.
+
+        Returns:
+            The superseded :class:`ContextEntry`.
+        """
+        data = self._http.post(
+            f"/tasks/{task_id}/context/supersede", body={"key": key}
+        )
+        entry = data.get("superseded") if isinstance(data, dict) else None
+        return ContextEntry.from_dict(entry if isinstance(entry, dict) else data)
+
+    def set_state(
+        self, task_id: str, state: str, *, detail: Optional[str] = None
+    ) -> Task:
+        """Report a session state on a claimed task without extending the lease.
+
+        Requires holding an active claim on the task (claim it first via
+        ``claim(task_id=...)``); otherwise the API returns a 409
+        :class:`DelegaAPIError`.
+
+        Args:
+            task_id: The task identifier.
+            state: One of ``"working"``, ``"waiting_input"``, ``"errored"``.
+            detail: Optional free-text detail (e.g. what input is needed).
+        """
+        body: dict[str, Any] = {"state": state}
+        if detail is not None:
+            body["detail"] = detail
+        data = self._http.post(f"/tasks/{task_id}/state", body=body)
+        return Task.from_dict(data)
+
+    def list_links(self, task_id: str) -> list[TaskLink]:
+        """List the repo/URL links attached to a task.
+
+        Args:
+            task_id: The task identifier.
+        """
+        data = self._http.get(f"/tasks/{task_id}/links")
+        return [TaskLink.from_dict(l) for l in data]
+
+    def add_link(
+        self,
+        task_id: str,
+        kind: str,
+        ref: str,
+        *,
+        repo: Optional[str] = None,
+        url: Optional[str] = None,
+    ) -> TaskLink:
+        """Attach a branch, commit, PR, or URL link to a task.
+
+        Duplicate links (same kind, repo, ref) return the existing record
+        instead of creating a second one.
+
+        Args:
+            task_id: The task identifier.
+            kind: One of ``"branch"``, ``"commit"``, ``"pr"``, ``"url"``.
+            ref: Branch name, commit SHA, PR number, or URL reference.
+            repo: Repository in ``owner/name`` form (for repo-kinded links).
+            url: Optional explicit URL for the link.
+        """
+        body: dict[str, Any] = {"kind": kind, "ref": ref}
+        if repo is not None:
+            body["repo"] = repo
+        if url is not None:
+            body["url"] = url
+        data = self._http.post(f"/tasks/{task_id}/links", body=body)
+        return TaskLink.from_dict(data)
+
+    def delete_link(self, task_id: str, link_id: str) -> bool:
+        """Remove a link from a task.
+
+        Args:
+            task_id: The task identifier.
+            link_id: The link identifier.
+
+        Returns:
+            ``True`` if the link was deleted successfully.
+        """
+        self._http.delete(f"/tasks/{task_id}/links/{link_id}")
+        return True
 
     def find_duplicates(
         self, content: str, *, threshold: Optional[float] = None
@@ -283,11 +422,12 @@ class _TasksNamespace:
     def claim(
         self,
         *,
+        task_id: Optional[str] = None,
         project_id: Optional[str] = None,
         labels: Optional[list[str]] = None,
         lease_seconds: Optional[int] = None,
     ) -> Optional[Task]:
-        """Atomically claim the next claimable task from the queue.
+        """Atomically claim a task: the next from the queue, or a specific one.
 
         Tasks are claimed in priority order (priority ASC, then
         created_at ASC). The claim holds a lease; call ``heartbeat()``
@@ -296,6 +436,10 @@ class _TasksNamespace:
         ``assigned_to_agent_id``.
 
         Args:
+            task_id: Claim this specific task instead of the next from
+                the queue (raises a 409 :class:`DelegaAPIError` if it is
+                not claimable). ``project_id``/``labels`` filters do not
+                apply in this mode.
             project_id: Only claim tasks in this project.
             labels: Only claim tasks carrying these labels.
             lease_seconds: Lease duration in seconds, 30-3600
@@ -303,16 +447,19 @@ class _TasksNamespace:
 
         Returns:
             The claimed :class:`Task`, or ``None`` if no claimable task
-            is available.
+            is available (queue mode only).
         """
         body: dict[str, Any] = {}
-        if project_id is not None:
-            body["project_id"] = project_id
-        if labels is not None:
-            body["labels"] = labels
         if lease_seconds is not None:
             body["lease_seconds"] = lease_seconds
-        data = self._http.post("/tasks/claim", body=body)
+        if task_id is not None:
+            data = self._http.post(f"/tasks/{task_id}/claim", body=body)
+        else:
+            if project_id is not None:
+                body["project_id"] = project_id
+            if labels is not None:
+                body["labels"] = labels
+            data = self._http.post("/tasks/claim", body=body)
         task = data.get("task") if isinstance(data, dict) else None
         if task is None:
             return None

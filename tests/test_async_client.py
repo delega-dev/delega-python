@@ -374,3 +374,124 @@ async def test_async_accepts_DELEGA_AGENT_KEY_fallback(monkeypatch):
     monkeypatch.setenv("DELEGA_AGENT_KEY", "dlg_from_agent_env")
     client = AsyncDelega()
     assert client._http._api_key == "dlg_from_agent_env"
+
+
+@pytest.mark.asyncio
+async def test_async_update_context_versioned_wrapper():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler({"context": {"k": 1, "j": 2}, "version": 4}, recorded)
+    )
+    async with client:
+        merged = await client.tasks.update_context(
+            "t1", {"k": 1}, source="agent_observed", expected_version=3
+        )
+    assert merged == {"k": 1, "j": 2}
+    assert recorded[0].url.path.endswith("/v1/tasks/t1/context")
+    assert recorded[0].url.params["source"] == "agent_observed"
+    assert recorded[0].url.params["expected_version"] == "3"
+
+
+@pytest.mark.asyncio
+async def test_async_get_context_with_provenance():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler(
+            {
+                "context": {"notes": "hi"},
+                "version": 2,
+                "provenance": {"notes": {"source": "agent_inferred"}},
+            },
+            recorded,
+        )
+    )
+    async with client:
+        snap = await client.tasks.get_context("t1", include_provenance=True)
+    assert snap.context == {"notes": "hi"}
+    assert snap.version == 2
+    assert snap.provenance is not None
+    assert recorded[0].url.params["include"] == "provenance"
+
+
+@pytest.mark.asyncio
+async def test_async_context_history():
+    client = _make_client(
+        _json_handler(
+            {
+                "entries": [
+                    {"id": "ce1", "key": "notes", "value": 1, "version": 1},
+                ],
+                "next_cursor": None,
+            }
+        )
+    )
+    async with client:
+        history = await client.tasks.context_history("t1", key="notes")
+    assert len(history.entries) == 1
+    assert history.entries[0].key == "notes"
+    assert history.next_cursor is None
+
+
+@pytest.mark.asyncio
+async def test_async_supersede_context():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler(
+            {"superseded": {"id": "ce1", "key": "notes", "value": "x", "version": 1}},
+            recorded,
+        )
+    )
+    async with client:
+        entry = await client.tasks.supersede_context("t1", "notes")
+    assert entry.key == "notes"
+    body = json.loads(recorded[0].content.decode())
+    assert body == {"key": "notes"}
+
+
+@pytest.mark.asyncio
+async def test_async_set_state():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler(
+            {"id": "t1", "content": "Work", "session_state": "errored",
+             "session_state_detail": "boom"},
+            recorded,
+        )
+    )
+    async with client:
+        task = await client.tasks.set_state("t1", "errored", detail="boom")
+    assert task.session_state == "errored"
+    assert recorded[0].url.path.endswith("/v1/tasks/t1/state")
+    body = json.loads(recorded[0].content.decode())
+    assert body == {"state": "errored", "detail": "boom"}
+
+
+@pytest.mark.asyncio
+async def test_async_task_links_roundtrip():
+    recorded: list[httpx.Request] = []
+    client = _make_client(
+        _recording_handler(
+            {"id": "lnk1", "task_id": "t1", "kind": "branch", "ref": "main"},
+            recorded,
+        )
+    )
+    async with client:
+        link = await client.tasks.add_link("t1", "branch", "main")
+    assert link.kind == "branch"
+    assert recorded[0].url.path.endswith("/v1/tasks/t1/links")
+
+    client2 = _make_client(
+        _json_handler([
+            {"id": "lnk1", "task_id": "t1", "kind": "branch", "ref": "main"},
+        ])
+    )
+    async with client2:
+        links = await client2.tasks.list_links("t1")
+    assert len(links) == 1
+
+    recorded3: list[httpx.Request] = []
+    client3 = _make_client(_recording_handler({"ok": True}, recorded3))
+    async with client3:
+        assert await client3.tasks.delete_link("t1", "lnk1") is True
+    assert recorded3[0].method == "DELETE"
+    assert recorded3[0].url.path.endswith("/v1/tasks/t1/links/lnk1")

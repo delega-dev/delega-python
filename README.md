@@ -106,6 +106,50 @@ while True:
 
 `claim()` returns `None` when no claimable task is available. `lease_seconds` accepts 30-3600 (default 300); if the lease expires without a heartbeat, the task becomes claimable again. Claiming sets `status` to `"claimed"` but never touches `assigned_to_agent_id`. Filter claimed/unclaimed tasks with `client.tasks.list(claimed=True)` or `claimed=False`.
 
+## Session State
+
+Report what a worker is doing on a task — without touching the claim lease — so orchestrators and dashboards can see `working`, `waiting_input`, or `errored` states:
+
+```python
+client.tasks.set_state(task.id, "waiting_input", detail="Need repo credentials")
+```
+
+## Task Context & Provenance
+
+Each task carries a persistent context blob shared across sessions and agents. Writes merge (existing keys are preserved) and every write is recorded in an append-only provenance ledger:
+
+```python
+# Read the current context and its version
+snap = client.tasks.get_context(task.id, include_provenance=True)
+print(snap.context, snap.version, snap.provenance)
+
+# Merge keys, attributing the write and guarding against concurrent writers
+client.tasks.update_context(
+    task.id,
+    {"decision": "use Postgres", "files": ["db.py"]},
+    source="agent_observed",        # human_stated | agent_inferred | agent_observed | imported
+    expected_version=snap.version,  # raises a 409 DelegaAPIError on conflict
+)
+
+# Audit who wrote what, when
+history = client.tasks.context_history(task.id, key="decision")
+for entry in history.entries:
+    print(entry.version, entry.author_name, entry.source, entry.value)
+
+# Mark a live entry as stale without changing the value
+client.tasks.supersede_context(task.id, "decision")
+```
+
+## Task Links
+
+Attach repo activity or URLs to a task (the hosted GitHub integration creates these automatically from `delega:#<task-id>` mentions):
+
+```python
+link = client.tasks.add_link(task.id, "pr", "42", repo="acme/webapp")
+links = client.tasks.list_links(task.id)
+client.tasks.delete_link(task.id, link.id)
+```
+
 ## Agents
 
 ```python
@@ -183,9 +227,12 @@ except DelegaError as e:
 
 All resource methods return typed dataclasses:
 
-- `Task` - id, content, description, priority, labels, due_date, completed, project_id, parent_id, claimed_by_agent_id, claimed_at, lease_expires_at, created_at, updated_at
+- `Task` - id, content, description, priority, labels, due_date, completed, project_id, parent_id, claimed_by_agent_id, claimed_at, lease_expires_at, session_state, session_state_detail, accountable_agent_id, context_version, created_at, updated_at
 
 The claiming fields (`claimed_by_agent_id`, `claimed_at`, `lease_expires_at`) are set while a task is claimed via `tasks.claim()` and are `None` otherwise. A claimed task has `status == "claimed"`.
+- `TaskLink` - id, task_id, kind (`branch`/`commit`/`pr`/`url`), repo, ref, url, created_by_agent_id, created_at
+- `ContextSnapshot` - context, version, provenance (from `tasks.get_context()`)
+- `ContextEntry` / `ContextHistory` - the provenance ledger (from `tasks.context_history()` / `tasks.supersede_context()`)
 - `Comment` - id, task_id, content, created_at
 - `Agent` - id, name, display_name, description, api_key, created_at, updated_at
 

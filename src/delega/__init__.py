@@ -12,11 +12,15 @@ from .exceptions import (
 from .models import (
     Agent,
     Comment,
+    ContextEntry,
+    ContextHistory,
+    ContextSnapshot,
     DedupResult,
     DelegationChain,
     DuplicateMatch,
     Project,
     Task,
+    TaskLink,
 )
 from .webhooks import verify_webhook
 
@@ -24,6 +28,9 @@ __all__ = [
     "Agent",
     "AsyncDelega",
     "Comment",
+    "ContextEntry",
+    "ContextHistory",
+    "ContextSnapshot",
     "DedupResult",
     "Delega",
     "DelegaAPIError",
@@ -35,6 +42,7 @@ __all__ = [
     "DuplicateMatch",
     "Project",
     "Task",
+    "TaskLink",
     "verify_webhook",
 ]
 

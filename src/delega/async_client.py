@@ -13,7 +13,19 @@ from .exceptions import (
     DelegaNotFoundError,
     DelegaRateLimitError,
 )
-from .models import Agent, Comment, DedupResult, DelegationChain, Project, Task
+from .models import (
+    Agent,
+    Comment,
+    ContextEntry,
+    ContextHistory,
+    ContextSnapshot,
+    DedupResult,
+    DelegationChain,
+    Project,
+    Task,
+    TaskLink,
+    _normalize_merged_context,
+)
 from ._version import USER_AGENT
 
 _DEFAULT_BASE_URL = "https://api.delega.dev"
@@ -100,11 +112,23 @@ class _AsyncHTTPClient:
     async def get(self, path: str, *, params: Optional[dict[str, Any]] = None) -> Any:
         return await self.request("GET", path, params=params)
 
-    async def post(self, path: str, *, body: Optional[dict[str, Any]] = None) -> Any:
-        return await self.request("POST", path, body=body)
+    async def post(
+        self,
+        path: str,
+        *,
+        body: Optional[dict[str, Any]] = None,
+        params: Optional[dict[str, Any]] = None,
+    ) -> Any:
+        return await self.request("POST", path, params=params, body=body)
 
-    async def patch(self, path: str, *, body: Optional[dict[str, Any]] = None) -> Any:
-        return await self.request("PATCH", path, body=body)
+    async def patch(
+        self,
+        path: str,
+        *,
+        body: Optional[dict[str, Any]] = None,
+        params: Optional[dict[str, Any]] = None,
+    ) -> Any:
+        return await self.request("PATCH", path, params=params, body=body)
 
     async def put(self, path: str, *, body: Optional[dict[str, Any]] = None) -> Any:
         return await self.request("PUT", path, body=body)
@@ -250,23 +274,99 @@ class _AsyncTasksNamespace:
         return DelegationChain.from_dict(data)
 
     async def update_context(
-        self, task_id: str, context: dict[str, Any]
+        self,
+        task_id: str,
+        context: dict[str, Any],
+        *,
+        source: Optional[str] = None,
+        expected_version: Optional[int] = None,
     ) -> dict[str, Any]:
         """Deep-merge keys into a task's persistent context blob.
 
         Existing keys are preserved; supplied keys are added or overwritten.
+        ``source`` attributes the write in the provenance ledger;
+        ``expected_version`` is an optimistic-concurrency guard (409 on
+        conflict).
         """
-        data = await self._http.patch(f"/tasks/{task_id}/context", body=context)
-        if isinstance(data, dict) and "content" in data and "id" in data:
-            raw_ctx = data.get("context") or {}
-            if isinstance(raw_ctx, str):
-                import json as _json
-                try:
-                    raw_ctx = _json.loads(raw_ctx) if raw_ctx.strip() else {}
-                except Exception:
-                    raw_ctx = {}
-            return raw_ctx if isinstance(raw_ctx, dict) else {}
-        return data if isinstance(data, dict) else {}
+        params: dict[str, Any] = {}
+        if source is not None:
+            params["source"] = source
+        if expected_version is not None:
+            params["expected_version"] = expected_version
+        data = await self._http.patch(
+            f"/tasks/{task_id}/context", body=context, params=params or None
+        )
+        return _normalize_merged_context(data)
+
+    async def get_context(
+        self, task_id: str, *, include_provenance: bool = False
+    ) -> ContextSnapshot:
+        """Read a task's persistent context blob and its version."""
+        params = {"include": "provenance"} if include_provenance else None
+        data = await self._http.get(f"/tasks/{task_id}/context", params=params)
+        return ContextSnapshot.from_dict(data)
+
+    async def context_history(
+        self,
+        task_id: str,
+        *,
+        key: Optional[str] = None,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+    ) -> ContextHistory:
+        """Read the append-only provenance ledger for a task's context."""
+        params: dict[str, Any] = {"key": key, "limit": limit, "cursor": cursor}
+        data = await self._http.get(f"/tasks/{task_id}/context/history", params=params)
+        return ContextHistory.from_dict(data)
+
+    async def supersede_context(self, task_id: str, key: str) -> ContextEntry:
+        """Mark the live context entry for ``key`` as superseded (stale)."""
+        data = await self._http.post(
+            f"/tasks/{task_id}/context/supersede", body={"key": key}
+        )
+        entry = data.get("superseded") if isinstance(data, dict) else None
+        return ContextEntry.from_dict(entry if isinstance(entry, dict) else data)
+
+    async def set_state(
+        self, task_id: str, state: str, *, detail: Optional[str] = None
+    ) -> Task:
+        """Report a session state (``working``/``waiting_input``/``errored``).
+
+        Requires holding an active claim on the task (409 otherwise).
+        """
+        body: dict[str, Any] = {"state": state}
+        if detail is not None:
+            body["detail"] = detail
+        data = await self._http.post(f"/tasks/{task_id}/state", body=body)
+        return Task.from_dict(data)
+
+    async def list_links(self, task_id: str) -> list[TaskLink]:
+        """List the repo/URL links attached to a task."""
+        data = await self._http.get(f"/tasks/{task_id}/links")
+        return [TaskLink.from_dict(l) for l in data]
+
+    async def add_link(
+        self,
+        task_id: str,
+        kind: str,
+        ref: str,
+        *,
+        repo: Optional[str] = None,
+        url: Optional[str] = None,
+    ) -> TaskLink:
+        """Attach a branch, commit, PR, or URL link to a task."""
+        body: dict[str, Any] = {"kind": kind, "ref": ref}
+        if repo is not None:
+            body["repo"] = repo
+        if url is not None:
+            body["url"] = url
+        data = await self._http.post(f"/tasks/{task_id}/links", body=body)
+        return TaskLink.from_dict(data)
+
+    async def delete_link(self, task_id: str, link_id: str) -> bool:
+        """Remove a link from a task."""
+        await self._http.delete(f"/tasks/{task_id}/links/{link_id}")
+        return True
 
     async def find_duplicates(
         self, content: str, *, threshold: Optional[float] = None
@@ -281,30 +381,35 @@ class _AsyncTasksNamespace:
     async def claim(
         self,
         *,
+        task_id: Optional[str] = None,
         project_id: Optional[str] = None,
         labels: Optional[list[str]] = None,
         lease_seconds: Optional[int] = None,
     ) -> Optional[Task]:
-        """Atomically claim the next claimable task from the queue.
+        """Atomically claim a task: the next from the queue, or a specific one.
 
         Tasks are claimed in priority order (priority ASC, then
         created_at ASC). The claim holds a lease; call ``heartbeat()``
         to extend it while working, and ``release()`` to give the task
         back to the queue. Claiming never modifies
-        ``assigned_to_agent_id``.
+        ``assigned_to_agent_id``. Pass ``task_id`` to claim a specific
+        task (409 if it is not claimable).
 
         Returns:
             The claimed :class:`Task`, or ``None`` if no claimable task
-            is available.
+            is available (queue mode only).
         """
         body: dict[str, Any] = {}
-        if project_id is not None:
-            body["project_id"] = project_id
-        if labels is not None:
-            body["labels"] = labels
         if lease_seconds is not None:
             body["lease_seconds"] = lease_seconds
-        data = await self._http.post("/tasks/claim", body=body)
+        if task_id is not None:
+            data = await self._http.post(f"/tasks/{task_id}/claim", body=body)
+        else:
+            if project_id is not None:
+                body["project_id"] = project_id
+            if labels is not None:
+                body["labels"] = labels
+            data = await self._http.post("/tasks/claim", body=body)
         task = data.get("task") if isinstance(data, dict) else None
         if task is None:
             return None
