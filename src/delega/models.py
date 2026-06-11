@@ -131,6 +131,7 @@ class Agent:
     name: str
     display_name: Optional[str] = None
     description: Optional[str] = None
+    role: Optional[str] = None
     api_key: Optional[str] = field(default=None, repr=False)
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -143,6 +144,7 @@ class Agent:
             name=data["name"],
             display_name=data.get("display_name"),
             description=data.get("description"),
+            role=data.get("role"),
             api_key=data.get("api_key"),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),

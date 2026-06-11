@@ -910,5 +910,43 @@ class TestContextLinksState(unittest.TestCase):
         self.assertEqual(task.context_version, 7)
 
 
+class TestAgentRoles(unittest.TestCase):
+    """Tests for agent role presets (0.5.0)."""
+
+    def setUp(self) -> None:
+        self.client = Delega(api_key="dlg_test")
+
+    @patch("urllib.request.urlopen")
+    def test_create_agent_with_role(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "id": "a1", "name": "scrum-bot", "role": "coordinator",
+        })
+        agent = self.client.agents.create("scrum-bot", role="coordinator")
+        self.assertEqual(agent.role, "coordinator")
+        request = mock_urlopen.call_args[0][0]
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(body, {"name": "scrum-bot", "role": "coordinator"})
+
+    @patch("urllib.request.urlopen")
+    def test_set_role(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "id": "a1", "name": "scrum-bot", "role": "worker",
+        })
+        agent = self.client.agents.set_role("a1", "worker")
+        self.assertEqual(agent.role, "worker")
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/agents/a1"))
+        self.assertEqual(request.get_method(), "PUT")
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(body, {"role": "worker"})
+
+    @patch("urllib.request.urlopen")
+    def test_update_uses_put(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({"id": "a1", "name": "bot"})
+        self.client.agents.update("a1", display_name="Bot")
+        request = mock_urlopen.call_args[0][0]
+        self.assertEqual(request.get_method(), "PUT")
+
+
 if __name__ == "__main__":
     unittest.main()

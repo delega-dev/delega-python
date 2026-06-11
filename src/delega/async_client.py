@@ -465,19 +465,31 @@ class _AsyncAgentsNamespace:
         *,
         display_name: Optional[str] = None,
         description: Optional[str] = None,
+        role: Optional[str] = None,
     ) -> Agent:
-        """Create a new agent. Returns api_key in the response."""
+        """Create a new agent. Returns api_key in the response.
+
+        ``role`` is an optional preset: ``"worker"`` (default),
+        ``"coordinator"``, or ``"admin"``.
+        """
         body: dict[str, Any] = {"name": name}
         if display_name is not None:
             body["display_name"] = display_name
         if description is not None:
             body["description"] = description
+        if role is not None:
+            body["role"] = role
         data = await self._http.post("/agents", body=body)
         return Agent.from_dict(data)
 
     async def update(self, agent_id: str, **fields: Any) -> Agent:
         """Update an agent."""
-        data = await self._http.patch(f"/agents/{agent_id}", body=fields)
+        data = await self._http.put(f"/agents/{agent_id}", body=fields)
+        return Agent.from_dict(data)
+
+    async def set_role(self, agent_id: str, role: str) -> Agent:
+        """Set an agent's role (admin key required): worker, coordinator, or admin."""
+        data = await self._http.put(f"/agents/{agent_id}", body={"role": role})
         return Agent.from_dict(data)
 
     async def delete(self, agent_id: str) -> bool:

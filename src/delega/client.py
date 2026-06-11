@@ -537,6 +537,7 @@ class _AgentsNamespace:
         *,
         display_name: Optional[str] = None,
         description: Optional[str] = None,
+        role: Optional[str] = None,
     ) -> Agent:
         """Create a new agent.
 
@@ -547,13 +548,30 @@ class _AgentsNamespace:
             name: Unique agent name.
             display_name: Optional human-friendly display name.
             description: Optional description.
+            role: Optional role preset — ``"worker"`` (own-task scope,
+                default), ``"coordinator"`` (sees and can comment on all
+                account tasks), or ``"admin"`` (full account management).
         """
         body: dict[str, Any] = {"name": name}
         if display_name is not None:
             body["display_name"] = display_name
         if description is not None:
             body["description"] = description
+        if role is not None:
+            body["role"] = role
         data = self._http.post("/agents", body=body)
+        return Agent.from_dict(data)
+
+    def set_role(self, agent_id: str, role: str) -> Agent:
+        """Set an agent's role (admin key required).
+
+        Args:
+            agent_id: The agent identifier.
+            role: ``"worker"``, ``"coordinator"``, or ``"admin"``.
+                Sandbox agents graduate via the claim flow and cannot be
+                assigned a role.
+        """
+        data = self._http.put(f"/agents/{agent_id}", body={"role": role})
         return Agent.from_dict(data)
 
     def update(self, agent_id: str, **fields: Any) -> Agent:
@@ -561,9 +579,11 @@ class _AgentsNamespace:
 
         Args:
             agent_id: The agent identifier.
-            **fields: Fields to update (name, display_name, description).
+            **fields: Fields to update (name, display_name, description,
+                role, permissions, is_admin — role changes require an
+                admin key).
         """
-        data = self._http.patch(f"/agents/{agent_id}", body=fields)
+        data = self._http.put(f"/agents/{agent_id}", body=fields)
         return Agent.from_dict(data)
 
     def delete(self, agent_id: str) -> bool:

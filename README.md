@@ -157,6 +157,12 @@ agents = client.agents.list()
 agent = client.agents.create("deploy-bot", display_name="Deploy Bot")
 print(agent.api_key)  # Only available at creation time
 
+# Role presets (admin key required): worker (own-task scope, default),
+# coordinator (sees + can comment on all account tasks), admin
+scrum = client.agents.create("scrum-bot", role="coordinator")
+client.agents.set_role(agent.id, "coordinator")
+print(agent.role)
+
 client.agents.update(agent.id, description="Handles deployments")
 result = client.agents.rotate_key(agent.id)
 print(result["api_key"])
