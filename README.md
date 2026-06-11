@@ -44,14 +44,14 @@ client = Delega(api_key="dlg_...")
 client = Delega()
 ```
 
-For self-hosted instances, point `base_url` at the API namespace:
+To target a custom endpoint (advanced), point `base_url` at the API namespace:
 
 ```python
 client = Delega(api_key="dlg_...", base_url="http://localhost:18890")
 # or: Delega(api_key="dlg_...", base_url="https://delega.yourcompany.com/api")
 ```
 
-Passing a bare localhost URL defaults to the self-hosted `/api` namespace. For remote self-hosted deployments, include `/api` explicitly.
+Passing a bare localhost URL defaults to the `/api` namespace. For remote custom endpoints, include `/api` explicitly.
 
 ## Tasks
 
@@ -145,7 +145,7 @@ me = client.me()       # Get authenticated agent info
 usage = client.usage()  # Get API usage stats
 ```
 
-`me()` and `usage()` are hosted-account endpoints. Self-hosted OSS deployments expose task/agent/project/webhook APIs under `/api`, but may not implement those hosted account endpoints.
+`me()` and `usage()` are hosted-account endpoints (`api.delega.dev`). Custom `/api`-namespace endpoints expose task/agent/project/webhook APIs, but may not implement those hosted account endpoints.
 
 ## Async Client
 

@@ -458,8 +458,8 @@ class AsyncDelega:
             ``DELEGA_AGENT_KEY`` for cross-client consistency with the
             ``@delega-dev/mcp`` package.
         base_url: Base URL of the Delega API. Defaults to
-            ``https://api.delega.dev`` (normalized to ``/v1``). For
-            self-hosted deployments, use ``http://localhost:18890`` or an
+            ``https://api.delega.dev`` (normalized to ``/v1``). To target
+            a custom endpoint, use ``http://localhost:18890`` or an
             explicit ``.../api`` base URL.
         timeout: Request timeout in seconds. Defaults to 30.
 
@@ -498,7 +498,7 @@ class AsyncDelega:
     async def usage(self) -> dict[str, Any]:
         """Get quota and rate-limit information for the current plan.
 
-        Hosted API only (``api.delega.dev``). Self-hosted deployments
+        Hosted API only (``api.delega.dev``). Custom ``/api`` endpoints
         will raise :class:`DelegaError` before making a request.
         """
         if self._http.path_prefix != "/v1":
