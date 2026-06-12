@@ -20,6 +20,7 @@ from delega import (
     DelegaRateLimitError,
     DelegationChain,
     Project,
+    Recurrence,
     Task,
 )
 from delega._version import USER_AGENT
@@ -108,6 +109,7 @@ class TestClientInit(unittest.TestCase):
     def test_has_namespaces(self) -> None:
         client = Delega(api_key="dlg_test")
         self.assertTrue(hasattr(client, "tasks"))
+        self.assertTrue(hasattr(client, "recurrences"))
         self.assertTrue(hasattr(client, "agents"))
         self.assertTrue(hasattr(client, "projects"))
         self.assertTrue(hasattr(client, "webhooks"))
@@ -120,7 +122,7 @@ class TestTasksMethods(unittest.TestCase):
     @patch("urllib.request.urlopen")
     def test_list_tasks(self, mock_urlopen: MagicMock) -> None:
         mock_urlopen.return_value = _mock_response([
-            {"id": "t1", "content": "Task 1", "priority": 1},
+            {"id": "t1", "content": "Task 1", "priority": 1, "labels": "[\"home\"]"},
             {"id": "t2", "content": "Task 2", "priority": 3},
         ])
         tasks = self.client.tasks.list()
@@ -128,6 +130,7 @@ class TestTasksMethods(unittest.TestCase):
         self.assertIsInstance(tasks[0], Task)
         self.assertEqual(tasks[0].id, "t1")
         self.assertEqual(tasks[0].content, "Task 1")
+        self.assertEqual(tasks[0].labels, ["home"])
 
     @patch("urllib.request.urlopen")
     def test_list_tasks_with_filters(self, mock_urlopen: MagicMock) -> None:
@@ -946,6 +949,89 @@ class TestAgentRoles(unittest.TestCase):
         self.client.agents.update("a1", display_name="Bot")
         request = mock_urlopen.call_args[0][0]
         self.assertEqual(request.get_method(), "PUT")
+
+
+class TestRecurrencesMethods(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = Delega(api_key="dlg_test")
+
+    @patch("urllib.request.urlopen")
+    def test_list_recurrences(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response([
+            {
+                "id": "rec1",
+                "content": "Replace furnace filter",
+                "labels": "[\"home-family\"]",
+                "rule_type": "monthly",
+                "interval": 1,
+                "timezone": "America/Chicago",
+                "anchor_day": 1,
+                "next_due_at": "2026-07-01T05:00:00.000Z",
+                "active": 1,
+                "skip_if_open": 1,
+            }
+        ])
+        recurrences = self.client.recurrences.list()
+        self.assertEqual(len(recurrences), 1)
+        self.assertIsInstance(recurrences[0], Recurrence)
+        self.assertEqual(recurrences[0].labels, ["home-family"])
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/recurrences"))
+
+    @patch("urllib.request.urlopen")
+    def test_create_recurrence(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "id": "rec1",
+            "content": "Replace furnace filter",
+            "rule_type": "monthly",
+            "interval": 1,
+            "timezone": "America/Chicago",
+            "anchor_day": 1,
+            "next_due_at": "2026-07-01T05:00:00.000Z",
+        })
+        recurrence = self.client.recurrences.create(
+            "Replace furnace filter",
+            rule_type="monthly",
+            timezone="America/Chicago",
+            anchor_day=1,
+            labels=["home-family"],
+        )
+        self.assertEqual(recurrence.id, "rec1")
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/recurrences"))
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(body["content"], "Replace furnace filter")
+        self.assertEqual(body["rule_type"], "monthly")
+        self.assertEqual(body["timezone"], "America/Chicago")
+        self.assertEqual(body["anchor_day"], 1)
+        self.assertEqual(body["labels"], ["home-family"])
+
+    @patch("urllib.request.urlopen")
+    def test_update_recurrence(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({
+            "id": "rec1",
+            "content": "Replace furnace filter",
+            "rule_type": "monthly",
+            "interval": 1,
+            "timezone": "America/Chicago",
+            "active": 0,
+        })
+        recurrence = self.client.recurrences.update("rec1", active=False)
+        self.assertFalse(recurrence.active)
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/recurrences/rec1"))
+        self.assertEqual(request.get_method(), "PUT")
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(body, {"active": False})
+
+    @patch("urllib.request.urlopen")
+    def test_delete_recurrence(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.return_value = _mock_response({"ok": True})
+        result = self.client.recurrences.delete("rec1")
+        self.assertTrue(result)
+        request = mock_urlopen.call_args[0][0]
+        self.assertTrue(request.full_url.endswith("/v1/recurrences/rec1"))
+        self.assertEqual(request.get_method(), "DELETE")
 
 
 if __name__ == "__main__":

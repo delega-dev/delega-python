@@ -30,6 +30,25 @@ def _normalize_merged_context(data: Any) -> dict[str, Any]:
     return data
 
 
+def _normalize_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        try:
+            parsed = _json.loads(stripped)
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed]
+        except Exception:
+            pass
+        return [item.strip() for item in stripped.split(",") if item.strip()]
+    return []
+
+
 @dataclass
 class Task:
     """A Delega task."""
@@ -78,7 +97,7 @@ class Task:
             content=data["content"],
             description=data.get("description"),
             priority=data.get("priority", 2),
-            labels=data.get("labels", []),
+            labels=_normalize_string_list(data.get("labels")),
             due_date=data.get("due_date"),
             completed=data.get("completed", False),
             project_id=data.get("project_id"),
@@ -98,6 +117,58 @@ class Task:
             accountable_agent_id=data.get("accountable_agent_id"),
             context=raw_ctx if isinstance(raw_ctx, dict) else None,
             context_version=data.get("context_version", 0) or 0,
+            created_at=data.get("created_at"),
+            updated_at=data.get("updated_at"),
+        )
+
+
+@dataclass
+class Recurrence:
+    """A recurring task template that spawns normal task instances."""
+
+    id: str
+    content: str
+    description: Optional[str] = None
+    project_id: Optional[str] = None
+    priority: int = 1
+    labels: list[str] = field(default_factory=list)
+    assigned_to_agent_id: Optional[str] = None
+    rule_type: str = "monthly"
+    interval: int = 1
+    timezone: str = "UTC"
+    anchor_day: Optional[int] = None
+    anchor_month: Optional[int] = None
+    anchor_weekday: Optional[int] = None
+    next_due_at: Optional[str] = None
+    last_spawned_at: Optional[str] = None
+    active: bool = True
+    skip_if_open: bool = True
+    created_by_agent_id: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Recurrence:
+        """Create a Recurrence from an API response dictionary."""
+        return cls(
+            id=str(data["id"]),
+            content=data["content"],
+            description=data.get("description"),
+            project_id=data.get("project_id"),
+            priority=int(data.get("priority", 1) or 1),
+            labels=_normalize_string_list(data.get("labels")),
+            assigned_to_agent_id=data.get("assigned_to_agent_id"),
+            rule_type=data.get("rule_type", "monthly"),
+            interval=int(data.get("interval", 1) or 1),
+            timezone=data.get("timezone", "UTC"),
+            anchor_day=data.get("anchor_day"),
+            anchor_month=data.get("anchor_month"),
+            anchor_weekday=data.get("anchor_weekday"),
+            next_due_at=data.get("next_due_at"),
+            last_spawned_at=data.get("last_spawned_at"),
+            active=bool(data.get("active", True)),
+            skip_if_open=bool(data.get("skip_if_open", True)),
+            created_by_agent_id=data.get("created_by_agent_id"),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
         )

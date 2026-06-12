@@ -19,6 +19,7 @@ from .models import (
     DelegationChain,
     DuplicateMatch,
     Project,
+    Recurrence,
     Task,
     TaskLink,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "DelegationChain",
     "DuplicateMatch",
     "Project",
+    "Recurrence",
     "Task",
     "TaskLink",
     "verify_webhook",

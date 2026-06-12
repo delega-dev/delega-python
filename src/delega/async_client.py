@@ -22,6 +22,7 @@ from .models import (
     DedupResult,
     DelegationChain,
     Project,
+    Recurrence,
     Task,
     TaskLink,
     _normalize_merged_context,
@@ -448,6 +449,74 @@ class _AsyncTasksNamespace:
         return [Comment.from_dict(c) for c in data]
 
 
+class _AsyncRecurrencesNamespace:
+    """Async namespace for recurring task templates."""
+
+    def __init__(self, http: _AsyncHTTPClient) -> None:
+        self._http = http
+
+    async def list(self) -> list[Recurrence]:
+        """List recurring task templates visible to the current agent."""
+        data = await self._http.get("/recurrences")
+        return [Recurrence.from_dict(r) for r in data]
+
+    async def create(
+        self,
+        content: str,
+        *,
+        rule_type: str,
+        interval: int = 1,
+        timezone: str = "UTC",
+        description: Optional[str] = None,
+        priority: int = 1,
+        labels: Optional[list[str]] = None,
+        project_id: Optional[str] = None,
+        assigned_to_agent_id: Optional[str] = None,
+        anchor_day: Optional[int] = None,
+        anchor_month: Optional[int] = None,
+        anchor_weekday: Optional[int] = None,
+        next_due_at: Optional[str] = None,
+        skip_if_open: Optional[bool] = None,
+    ) -> Recurrence:
+        """Create a recurring task template."""
+        body: dict[str, Any] = {
+            "content": content,
+            "rule_type": rule_type,
+            "interval": interval,
+            "timezone": timezone,
+        }
+        optional = {
+            "description": description,
+            "priority": priority,
+            "labels": labels,
+            "project_id": project_id,
+            "assigned_to_agent_id": assigned_to_agent_id,
+            "anchor_day": anchor_day,
+            "anchor_month": anchor_month,
+            "anchor_weekday": anchor_weekday,
+            "next_due_at": next_due_at,
+            "skip_if_open": skip_if_open,
+        }
+        body.update({k: v for k, v in optional.items() if v is not None})
+        data = await self._http.post("/recurrences", body=body)
+        return Recurrence.from_dict(data)
+
+    async def get(self, recurrence_id: str) -> Recurrence:
+        """Get one recurring task template."""
+        data = await self._http.get(f"/recurrences/{recurrence_id}")
+        return Recurrence.from_dict(data)
+
+    async def update(self, recurrence_id: str, **fields: Any) -> Recurrence:
+        """Update a recurring task template, including ``active=False`` to pause."""
+        data = await self._http.put(f"/recurrences/{recurrence_id}", body=fields)
+        return Recurrence.from_dict(data)
+
+    async def delete(self, recurrence_id: str) -> bool:
+        """Delete a recurring task template. Spawned tasks remain."""
+        await self._http.delete(f"/recurrences/{recurrence_id}")
+        return True
+
+
 class _AsyncAgentsNamespace:
     """Async namespace for agent-related API methods."""
 
@@ -604,6 +673,7 @@ class AsyncDelega:
             )
         self._http = _AsyncHTTPClient(base_url=base_url, api_key=resolved_key, timeout=timeout)
         self.tasks = _AsyncTasksNamespace(self._http)
+        self.recurrences = _AsyncRecurrencesNamespace(self._http)
         self.agents = _AsyncAgentsNamespace(self._http)
         self.projects = _AsyncProjectsNamespace(self._http)
         self.webhooks = _AsyncWebhooksNamespace(self._http)

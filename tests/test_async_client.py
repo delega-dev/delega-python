@@ -23,6 +23,7 @@ from delega import (
     DedupResult,
     DelegaError,
     DelegationChain,
+    Recurrence,
     Task,
 )
 
@@ -495,3 +496,59 @@ async def test_async_task_links_roundtrip():
         assert await client3.tasks.delete_link("t1", "lnk1") is True
     assert recorded3[0].method == "DELETE"
     assert recorded3[0].url.path.endswith("/v1/tasks/t1/links/lnk1")
+
+
+@pytest.mark.asyncio
+async def test_async_recurrences_roundtrip():
+    payload = {
+        "id": "rec1",
+        "content": "Replace furnace filter",
+        "priority": 1,
+        "labels": "[\"home-family\"]",
+        "rule_type": "monthly",
+        "interval": 1,
+        "timezone": "America/Chicago",
+        "anchor_day": 1,
+        "next_due_at": "2026-07-01T05:00:00.000Z",
+        "active": 1,
+        "skip_if_open": 1,
+    }
+
+    client = _make_client(_json_handler([payload]))
+    async with client:
+        recurrences = await client.recurrences.list()
+    assert len(recurrences) == 1
+    assert isinstance(recurrences[0], Recurrence)
+    assert recurrences[0].labels == ["home-family"]
+
+    recorded: list[httpx.Request] = []
+    client2 = _make_client(_recording_handler(payload, recorded))
+    async with client2:
+        recurrence = await client2.recurrences.create(
+            "Replace furnace filter",
+            rule_type="monthly",
+            timezone="America/Chicago",
+            anchor_day=1,
+            labels=["home-family"],
+        )
+    assert recurrence.id == "rec1"
+    assert recorded[0].method == "POST"
+    assert recorded[0].url.path.endswith("/v1/recurrences")
+    body = json.loads(recorded[0].content.decode())
+    assert body["rule_type"] == "monthly"
+    assert body["labels"] == ["home-family"]
+
+    recorded2: list[httpx.Request] = []
+    client3 = _make_client(_recording_handler({**payload, "active": 0}, recorded2))
+    async with client3:
+        recurrence = await client3.recurrences.update("rec1", active=False)
+    assert recurrence.active == 0
+    assert recorded2[0].method == "PUT"
+    assert recorded2[0].url.path.endswith("/v1/recurrences/rec1")
+
+    recorded3: list[httpx.Request] = []
+    client4 = _make_client(_recording_handler({"ok": True}, recorded3))
+    async with client4:
+        assert await client4.recurrences.delete("rec1") is True
+    assert recorded3[0].method == "DELETE"
+    assert recorded3[0].url.path.endswith("/v1/recurrences/rec1")
