@@ -31,7 +31,7 @@ async = ["httpx>=0.27"]
 
 [project.urls]
 Homepage = "https://delega.dev"
-Documentation = "https://docs.delega.dev"
+Documentation = "https://delega.dev/docs"
 Repository = "https://github.com/delega-dev/delega-python"
 Issues = "https://github.com/delega-dev/delega-python/issues"
 
