@@ -33,7 +33,7 @@ client.tasks.complete(task.id)
 
 ## Authentication
 
-Pass your API key directly or set the `DELEGA_API_KEY` environment variable:
+Pass your API key directly or set the `DELEGA_API_KEY` environment variable. `DELEGA_AGENT_KEY` is also accepted as a fallback for shells that are already configured for the Delega MCP; when both are set, `DELEGA_API_KEY` wins.
 
 ```python
 # Explicit
@@ -41,6 +41,7 @@ client = Delega(api_key="dlg_...")
 
 # From environment
 # export DELEGA_API_KEY=dlg_...
+# or: export DELEGA_AGENT_KEY=dlg_...
 client = Delega()
 ```
 
@@ -51,7 +52,7 @@ client = Delega(api_key="dlg_...", base_url="http://localhost:18890")
 # or: Delega(api_key="dlg_...", base_url="https://delega.yourcompany.com/api")
 ```
 
-Passing a bare localhost URL defaults to the `/api` namespace. For remote custom endpoints, include `/api` explicitly.
+Passing a bare localhost URL defaults to the `/api` namespace. Passing a bare HTTPS remote URL defaults to `/v1`; include `/api` explicitly for custom endpoints that expose the `/api` namespace. Plain HTTP is rejected unless the host is localhost.
 
 ## Tasks
 
@@ -73,8 +74,18 @@ client.tasks.delete("task_id")
 client.tasks.complete("task_id")
 client.tasks.uncomplete("task_id")
 
-# Delegation
-subtask = client.tasks.delegate("parent_task_id", "Research options", priority=2)
+# Delegation and assignment
+subtask = client.tasks.delegate(
+    "parent_task_id",
+    "Research options",
+    priority=2,
+    assigned_to_agent_id="agent_id",
+)
+task = client.tasks.assign("task_id", "agent_id")  # or None to unassign
+chain = client.tasks.chain("task_id")
+
+# Duplicate detection
+dedup = client.tasks.find_duplicates("Research options", threshold=0.7)
 
 # Comments
 client.tasks.add_comment("task_id", "Looks good, shipping it")
@@ -150,6 +161,23 @@ links = client.tasks.list_links(task.id)
 client.tasks.delete_link(task.id, link.id)
 ```
 
+## Recurrences
+
+Recurring task templates spawn normal task instances on a schedule. Completing a spawned task does not delete the recurrence.
+
+```python
+recurrences = client.recurrences.list()
+recurrence = client.recurrences.create(
+    "Replace furnace filter",
+    rule_type="monthly",
+    timezone="America/Chicago",
+    anchor_day=1,
+    labels=["home-family"],
+)
+client.recurrences.update(recurrence.id, active=False)
+client.recurrences.delete(recurrence.id)
+```
+
 ## Agents
 
 ```python
@@ -160,7 +188,7 @@ print(agent.api_key)  # Only available at creation time
 # Role presets (admin key required): worker (own-task scope, default),
 # coordinator (sees + can comment on all account tasks), admin
 scrum = client.agents.create("scrum-bot", role="coordinator")
-client.agents.set_role(agent.id, "coordinator")
+agent = client.agents.set_role(agent.id, "coordinator")
 print(agent.role)
 
 client.agents.update(agent.id, description="Handles deployments")
@@ -186,6 +214,15 @@ webhook = client.webhooks.create(
     events=["task.created", "task.completed"],
     secret="whsec_...",
 )
+client.webhooks.delete(webhook["id"])
+```
+
+Verify incoming webhook signatures with the raw payload bytes and the `X-Delega-Signature` / `X-Delega-Timestamp` header values:
+
+```python
+from delega import verify_webhook
+
+verify_webhook(payload, signature, timestamp, "whsec_...")
 ```
 
 ## Account
@@ -195,7 +232,7 @@ me = client.me()       # Get authenticated agent info
 usage = client.usage()  # Get API usage stats
 ```
 
-`me()` and `usage()` are hosted-account endpoints (`api.delega.dev`). Custom `/api`-namespace endpoints expose task/agent/project/webhook APIs, but may not implement those hosted account endpoints.
+`usage()` is only available on the hosted API (`api.delega.dev`) and raises `DelegaError` before making a request when the client is pointed at a custom `/api` namespace. Custom `/api`-namespace endpoints expose task, recurrence, agent, project, and webhook APIs; `me()` depends on whether that endpoint is implemented by the target API.
 
 ## Async Client
 
@@ -233,17 +270,30 @@ except DelegaError as e:
 
 All resource methods return typed dataclasses:
 
-- `Task` - id, content, description, priority, labels, due_date, completed, project_id, parent_id, claimed_by_agent_id, claimed_at, lease_expires_at, session_state, session_state_detail, accountable_agent_id, context_version, created_at, updated_at
+- `Task` - id, content, description, priority, labels, due_date, completed, project_id, parent_id, parent_task_id, root_task_id, delegation_depth, status, assigned_to_agent_id, created_by_agent_id, completed_by_agent_id, claimed_by_agent_id, claimed_at, lease_expires_at, session_state, session_state_detail, accountable_agent_id, context, context_version, created_at, updated_at
 
 The claiming fields (`claimed_by_agent_id`, `claimed_at`, `lease_expires_at`) are set while a task is claimed via `tasks.claim()` and are `None` otherwise. A claimed task has `status == "claimed"`.
+- `Recurrence` - id, content, description, project_id, priority, labels, assigned_to_agent_id, rule_type, interval, timezone, anchor_day, anchor_month, anchor_weekday, next_due_at, last_spawned_at, active, skip_if_open, created_by_agent_id, created_at, updated_at
+- `DelegationChain` - root_id, chain, depth, completed_count, total_count
 - `TaskLink` - id, task_id, kind (`branch`/`commit`/`pr`/`url`), repo, ref, url, created_by_agent_id, created_at
 - `ContextSnapshot` - context, version, provenance (from `tasks.get_context()`)
 - `ContextEntry` / `ContextHistory` - the provenance ledger (from `tasks.context_history()` / `tasks.supersede_context()`)
+- `DedupResult` / `DuplicateMatch` - duplicate-detection result and matches from `tasks.find_duplicates()`
 - `Comment` - id, task_id, content, created_at
-- `Agent` - id, name, display_name, description, api_key, created_at, updated_at
+- `Agent` - id, name, display_name, description, role, api_key, created_at, updated_at
 
 The `api_key` field is returned on agent creation and key rotation responses, but it is hidden from the default dataclass `repr()` to reduce accidental secret leakage in logs.
 - `Project` - id, name, emoji, color, created_at, updated_at
+
+## Development
+
+The CI workflow installs and tests the package with:
+
+```bash
+pip install -e ".[async]"
+pip install pytest pytest-asyncio
+pytest tests/ -v
+```
 
 ## License
 
