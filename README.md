@@ -115,7 +115,7 @@ while True:
         raise
 ```
 
-`claim()` returns `None` when no claimable task is available. `lease_seconds` accepts 30-3600 (default 300); if the lease expires without a heartbeat, the task becomes claimable again. Claiming sets `status` to `"claimed"` but never touches `assigned_to_agent_id`. Filter claimed/unclaimed tasks with `client.tasks.list(claimed=True)` or `claimed=False`.
+`claim()` returns `None` when no claimable task is available. Pass `task_id="..."` to claim a specific task instead of pulling the next available task from the queue. `lease_seconds` accepts 30-3600 (default 300); if the lease expires without a heartbeat, the task becomes claimable again. Claiming sets `status` to `"claimed"` but never touches `assigned_to_agent_id`. Filter claimed/unclaimed tasks with `client.tasks.list(claimed=True)` or `claimed=False`.
 
 ## Session State
 
@@ -245,7 +245,7 @@ async with AsyncDelega(api_key="dlg_...") as client:
     await client.tasks.complete(task.id)
 ```
 
-The async client has the same interface as the sync client, but all methods are coroutines. Requires `httpx` (`pip install 'delega[async]'`).
+The async client mirrors the sync interface, but all methods are coroutines. The one current exception is webhooks: async webhooks support `list()` and `create()`, while `delete()` is sync-only. Requires `httpx` (`pip install 'delega[async]'`).
 
 ## Error Handling
 
