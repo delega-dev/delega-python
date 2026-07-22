@@ -120,6 +120,18 @@ class TestTasksMethods(unittest.TestCase):
         self.client = Delega(api_key="dlg_test")
 
     @patch("urllib.request.urlopen")
+    def test_path_id_is_percent_encoded(self, mock_urlopen: MagicMock) -> None:
+        # A path-manipulating id must be percent-encoded, not interpolated raw,
+        # so it can't alter the effective request path/query.
+        mock_urlopen.return_value = _mock_response({"id": "x", "content": "c", "priority": 2})
+        self.client.tasks.get("../agents/victim?admin=true")
+        full_url = mock_urlopen.call_args[0][0].full_url
+        self.assertNotIn("../agents", full_url)
+        self.assertNotIn("?admin=true", full_url)
+        self.assertIn("%2F", full_url)  # encoded slash
+        self.assertIn("/tasks/", full_url)
+
+    @patch("urllib.request.urlopen")
     def test_list_tasks(self, mock_urlopen: MagicMock) -> None:
         mock_urlopen.return_value = _mock_response([
             {"id": "t1", "content": "Task 1", "priority": 1, "labels": "[\"home\"]"},

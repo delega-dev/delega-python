@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
-from ._http import HTTPClient
+from ._http import HTTPClient, encode_path_segment as _seg
 from .exceptions import DelegaError
 from .models import (
     Agent,
@@ -111,7 +111,7 @@ class _TasksNamespace:
         Args:
             task_id: The task identifier.
         """
-        data = self._http.get(f"/tasks/{task_id}")
+        data = self._http.get(f"/tasks/{_seg(task_id)}")
         return Task.from_dict(data)
 
     def update(self, task_id: str, **fields: Any) -> Task:
@@ -121,7 +121,7 @@ class _TasksNamespace:
             task_id: The task identifier.
             **fields: Fields to update (content, description, priority, etc.).
         """
-        data = self._http.put(f"/tasks/{task_id}", body=fields)
+        data = self._http.put(f"/tasks/{_seg(task_id)}", body=fields)
         return Task.from_dict(data)
 
     def delete(self, task_id: str) -> bool:
@@ -133,7 +133,7 @@ class _TasksNamespace:
         Returns:
             ``True`` if the task was deleted successfully.
         """
-        self._http.delete(f"/tasks/{task_id}")
+        self._http.delete(f"/tasks/{_seg(task_id)}")
         return True
 
     def complete(self, task_id: str) -> Task:
@@ -142,7 +142,7 @@ class _TasksNamespace:
         Args:
             task_id: The task identifier.
         """
-        data = self._http.post(f"/tasks/{task_id}/complete")
+        data = self._http.post(f"/tasks/{_seg(task_id)}/complete")
         return Task.from_dict(data)
 
     def uncomplete(self, task_id: str) -> Task:
@@ -151,7 +151,7 @@ class _TasksNamespace:
         Args:
             task_id: The task identifier.
         """
-        data = self._http.post(f"/tasks/{task_id}/uncomplete")
+        data = self._http.post(f"/tasks/{_seg(task_id)}/uncomplete")
         return Task.from_dict(data)
 
     def search(self, query: str) -> list[Task]:
@@ -205,7 +205,7 @@ class _TasksNamespace:
             body["due_date"] = due_date
         if assigned_to_agent_id is not None:
             body["assigned_to_agent_id"] = assigned_to_agent_id
-        data = self._http.post(f"/tasks/{parent_task_id}/delegate", body=body)
+        data = self._http.post(f"/tasks/{_seg(parent_task_id)}/delegate", body=body)
         return Task.from_dict(data)
 
     def assign(self, task_id: str, agent_id: Optional[str]) -> Task:
@@ -220,7 +220,7 @@ class _TasksNamespace:
             agent_id: The agent identifier, or ``None`` to unassign.
         """
         data = self._http.put(
-            f"/tasks/{task_id}", body={"assigned_to_agent_id": agent_id}
+            f"/tasks/{_seg(task_id)}", body={"assigned_to_agent_id": agent_id}
         )
         return Task.from_dict(data)
 
@@ -233,7 +233,7 @@ class _TasksNamespace:
         Args:
             task_id: Any task identifier in the chain.
         """
-        data = self._http.get(f"/tasks/{task_id}/chain")
+        data = self._http.get(f"/tasks/{_seg(task_id)}/chain")
         return DelegationChain.from_dict(data)
 
     def update_context(
@@ -273,7 +273,7 @@ class _TasksNamespace:
         if expected_version is not None:
             params["expected_version"] = expected_version
         data = self._http.patch(
-            f"/tasks/{task_id}/context", body=context, params=params or None
+            f"/tasks/{_seg(task_id)}/context", body=context, params=params or None
         )
         return _normalize_merged_context(data)
 
@@ -288,7 +288,7 @@ class _TasksNamespace:
                 author/source/version provenance for the live entries.
         """
         params = {"include": "provenance"} if include_provenance else None
-        data = self._http.get(f"/tasks/{task_id}/context", params=params)
+        data = self._http.get(f"/tasks/{_seg(task_id)}/context", params=params)
         return ContextSnapshot.from_dict(data)
 
     def context_history(
@@ -309,7 +309,7 @@ class _TasksNamespace:
             cursor: Opaque cursor from a previous page's ``next_cursor``.
         """
         params: dict[str, Any] = {"key": key, "limit": limit, "cursor": cursor}
-        data = self._http.get(f"/tasks/{task_id}/context/history", params=params)
+        data = self._http.get(f"/tasks/{_seg(task_id)}/context/history", params=params)
         return ContextHistory.from_dict(data)
 
     def supersede_context(self, task_id: str, key: str) -> ContextEntry:
@@ -326,7 +326,7 @@ class _TasksNamespace:
             The superseded :class:`ContextEntry`.
         """
         data = self._http.post(
-            f"/tasks/{task_id}/context/supersede", body={"key": key}
+            f"/tasks/{_seg(task_id)}/context/supersede", body={"key": key}
         )
         entry = data.get("superseded") if isinstance(data, dict) else None
         return ContextEntry.from_dict(entry if isinstance(entry, dict) else data)
@@ -348,7 +348,7 @@ class _TasksNamespace:
         body: dict[str, Any] = {"state": state}
         if detail is not None:
             body["detail"] = detail
-        data = self._http.post(f"/tasks/{task_id}/state", body=body)
+        data = self._http.post(f"/tasks/{_seg(task_id)}/state", body=body)
         return Task.from_dict(data)
 
     def list_links(self, task_id: str) -> list[TaskLink]:
@@ -357,7 +357,7 @@ class _TasksNamespace:
         Args:
             task_id: The task identifier.
         """
-        data = self._http.get(f"/tasks/{task_id}/links")
+        data = self._http.get(f"/tasks/{_seg(task_id)}/links")
         return [TaskLink.from_dict(l) for l in data]
 
     def add_link(
@@ -386,7 +386,7 @@ class _TasksNamespace:
             body["repo"] = repo
         if url is not None:
             body["url"] = url
-        data = self._http.post(f"/tasks/{task_id}/links", body=body)
+        data = self._http.post(f"/tasks/{_seg(task_id)}/links", body=body)
         return TaskLink.from_dict(data)
 
     def delete_link(self, task_id: str, link_id: str) -> bool:
@@ -399,7 +399,7 @@ class _TasksNamespace:
         Returns:
             ``True`` if the link was deleted successfully.
         """
-        self._http.delete(f"/tasks/{task_id}/links/{link_id}")
+        self._http.delete(f"/tasks/{_seg(task_id)}/links/{_seg(link_id)}")
         return True
 
     def find_duplicates(
@@ -454,7 +454,7 @@ class _TasksNamespace:
         if lease_seconds is not None:
             body["lease_seconds"] = lease_seconds
         if task_id is not None:
-            data = self._http.post(f"/tasks/{task_id}/claim", body=body)
+            data = self._http.post(f"/tasks/{_seg(task_id)}/claim", body=body)
         else:
             if project_id is not None:
                 body["project_id"] = project_id
@@ -483,7 +483,7 @@ class _TasksNamespace:
         body: dict[str, Any] = {}
         if lease_seconds is not None:
             body["lease_seconds"] = lease_seconds
-        data = self._http.post(f"/tasks/{task_id}/heartbeat", body=body)
+        data = self._http.post(f"/tasks/{_seg(task_id)}/heartbeat", body=body)
         return Task.from_dict(data)
 
     def release(self, task_id: str) -> Task:
@@ -498,7 +498,7 @@ class _TasksNamespace:
             DelegaAuthError: 403 if the caller is not the claim holder.
             DelegaAPIError: 409 if the task is not claimed.
         """
-        data = self._http.post(f"/tasks/{task_id}/release")
+        data = self._http.post(f"/tasks/{_seg(task_id)}/release")
         return Task.from_dict(data)
 
     def add_comment(self, task_id: str, content: str) -> Comment:
@@ -508,7 +508,7 @@ class _TasksNamespace:
             task_id: The task identifier.
             content: The comment text.
         """
-        data = self._http.post(f"/tasks/{task_id}/comments", body={"content": content})
+        data = self._http.post(f"/tasks/{_seg(task_id)}/comments", body={"content": content})
         return Comment.from_dict(data)
 
     def list_comments(self, task_id: str) -> list[Comment]:
@@ -517,7 +517,7 @@ class _TasksNamespace:
         Args:
             task_id: The task identifier.
         """
-        data = self._http.get(f"/tasks/{task_id}/comments")
+        data = self._http.get(f"/tasks/{_seg(task_id)}/comments")
         return [Comment.from_dict(c) for c in data]
 
 
@@ -579,17 +579,17 @@ class _RecurrencesNamespace:
 
     def get(self, recurrence_id: str) -> Recurrence:
         """Get one recurring task template."""
-        data = self._http.get(f"/recurrences/{recurrence_id}")
+        data = self._http.get(f"/recurrences/{_seg(recurrence_id)}")
         return Recurrence.from_dict(data)
 
     def update(self, recurrence_id: str, **fields: Any) -> Recurrence:
         """Update a recurring task template, including ``active=False`` to pause."""
-        data = self._http.put(f"/recurrences/{recurrence_id}", body=fields)
+        data = self._http.put(f"/recurrences/{_seg(recurrence_id)}", body=fields)
         return Recurrence.from_dict(data)
 
     def delete(self, recurrence_id: str) -> bool:
         """Delete a recurring task template. Spawned tasks remain."""
-        self._http.delete(f"/recurrences/{recurrence_id}")
+        self._http.delete(f"/recurrences/{_seg(recurrence_id)}")
         return True
 
 
@@ -644,7 +644,7 @@ class _AgentsNamespace:
                 Sandbox agents graduate via the claim flow and cannot be
                 assigned a role.
         """
-        data = self._http.put(f"/agents/{agent_id}", body={"role": role})
+        data = self._http.put(f"/agents/{_seg(agent_id)}", body={"role": role})
         return Agent.from_dict(data)
 
     def update(self, agent_id: str, **fields: Any) -> Agent:
@@ -656,7 +656,7 @@ class _AgentsNamespace:
                 role, permissions, is_admin — role changes require an
                 admin key).
         """
-        data = self._http.put(f"/agents/{agent_id}", body=fields)
+        data = self._http.put(f"/agents/{_seg(agent_id)}", body=fields)
         return Agent.from_dict(data)
 
     def delete(self, agent_id: str) -> bool:
@@ -668,7 +668,7 @@ class _AgentsNamespace:
         Returns:
             ``True`` if the agent was deleted successfully.
         """
-        self._http.delete(f"/agents/{agent_id}")
+        self._http.delete(f"/agents/{_seg(agent_id)}")
         return True
 
     def rotate_key(self, agent_id: str) -> dict[str, Any]:
@@ -680,7 +680,7 @@ class _AgentsNamespace:
         Returns:
             Dictionary containing the new ``api_key``.
         """
-        data = self._http.post(f"/agents/{agent_id}/rotate-key")
+        data = self._http.post(f"/agents/{_seg(agent_id)}/rotate-key")
         return data  # type: ignore[no-any-return]
 
 
@@ -755,7 +755,7 @@ class _WebhooksNamespace:
         Args:
             webhook_id: The webhook identifier.
         """
-        self._http.delete(f"/webhooks/{webhook_id}")
+        self._http.delete(f"/webhooks/{_seg(webhook_id)}")
         return True
 
 

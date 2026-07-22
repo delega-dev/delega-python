@@ -56,6 +56,21 @@ class TestVerifyWebhook(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "signature mismatch"):
             verify_webhook(self.payload, signature, timestamp, self.secret)
 
+    def test_verifies_uppercase_hex_signature(self) -> None:
+        timestamp = _timestamp()
+        signature = _signature(self.payload, timestamp, self.secret).upper().replace("SHA256=", "sha256=")
+
+        self.assertTrue(
+            verify_webhook(self.payload, signature, timestamp, self.secret)
+        )
+
+    def test_rejects_far_future_timestamp(self) -> None:
+        timestamp = _timestamp(timedelta(minutes=6))
+        signature = _signature(self.payload, timestamp, self.secret)
+
+        with self.assertRaisesRegex(ValueError, "future"):
+            verify_webhook(self.payload, signature, timestamp, self.secret)
+
     def test_rejects_invalid_timestamp(self) -> None:
         signature = _signature(self.payload, "not-a-timestamp", self.secret)
 
