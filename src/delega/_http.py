@@ -28,7 +28,12 @@ def encode_path_segment(value: Any) -> str:
     ``..`` or whitespace from manipulating the request path/query. Every dynamic
     path segment in the client is wrapped in this before interpolation.
     """
-    return urllib.parse.quote(str(value), safe="")
+    raw = str(value)
+    # urllib leaves literal dot segments unchanged, and URL implementations
+    # normalize them as navigation rather than data.
+    if raw in ("", ".", ".."):
+        raise ValueError(f"Refusing to build an API path from unsafe id: {raw!r}")
+    return urllib.parse.quote(raw, safe="")
 
 
 def _normalize_host(hostname: str) -> str:

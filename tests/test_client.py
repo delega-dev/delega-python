@@ -132,6 +132,13 @@ class TestTasksMethods(unittest.TestCase):
         self.assertIn("/tasks/", full_url)
 
     @patch("urllib.request.urlopen")
+    def test_dot_segment_ids_are_rejected(self, mock_urlopen: MagicMock) -> None:
+        for task_id in ("", ".", ".."):
+            with self.assertRaisesRegex(ValueError, "unsafe id"):
+                self.client.tasks.get(task_id)
+        mock_urlopen.assert_not_called()
+
+    @patch("urllib.request.urlopen")
     def test_list_tasks(self, mock_urlopen: MagicMock) -> None:
         mock_urlopen.return_value = _mock_response([
             {"id": "t1", "content": "Task 1", "priority": 1, "labels": "[\"home\"]"},
