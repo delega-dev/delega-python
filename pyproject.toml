@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "delega"
 version = "0.6.2"
-description = "Official Python SDK for the Delega API"
+description = "Python SDK for Delega, a retired public service preserved as production engineering proof"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
@@ -30,7 +30,7 @@ keywords = ["delega", "api", "sdk", "task-management", "delegation"]
 async = ["httpx>=0.27"]
 
 [project.urls]
-Homepage = "https://delega.dev"
+Homepage = "https://ryanmcmillan.com/delega"
 Documentation = "https://delega.dev/docs"
 Repository = "https://github.com/delega-dev/delega-python"
 Issues = "https://github.com/delega-dev/delega-python/issues"

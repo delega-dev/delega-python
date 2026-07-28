@@ -1,6 +1,8 @@
 # Delega Python SDK
 
-Official Python SDK for the [Delega](https://delega.dev) API.
+> **Maintenance status:** Delega’s public hosted service retired on July 28, 2026. This SDK remains public as a verifiable engineering artifact and for Ryan McMillan’s existing private deployment. New public accounts and hosted access are not available. See the [case study](https://ryanmcmillan.com/delega).
+
+Python SDK for the Delega API.
 
 ## Installation
 
@@ -14,7 +16,7 @@ For async support:
 pip install 'delega[async]'
 ```
 
-## Quick Start
+## Existing owner credentials
 
 ```python
 from delega import Delega
