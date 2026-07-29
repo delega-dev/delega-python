@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2026-07-28
+
+### Changed
+- Published the retirement maintenance notice to PyPI. Public hosted access
+  retired July 28, 2026; this SDK remains available for Ryan McMillan's private
+  deployment and as a verifiable engineering artifact. Package metadata points
+  to the canonical case study and no longer presents Delega as a generally
+  available hosted service.
+
 ## [0.6.2] - 2026-07-22
 
 ### Security

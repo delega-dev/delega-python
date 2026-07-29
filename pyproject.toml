@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "delega"
-version = "0.6.2"
+version = "0.6.3"
 description = "Python SDK for Delega, a retired public service preserved as production engineering proof"
 readme = "README.md"
 license = "MIT"
