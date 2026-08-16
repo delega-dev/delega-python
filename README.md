@@ -247,7 +247,7 @@ async with AsyncDelega(api_key="dlg_...") as client:
     await client.tasks.complete(task.id)
 ```
 
-The async client has the same interface as the sync client, but all methods are coroutines. Requires `httpx` (`pip install 'delega[async]'`).
+The async client mirrors the sync client for tasks, recurrences, agents, and projects; those methods are coroutines. The async webhooks namespace currently supports `list()` and `create()`, while `webhooks.delete()` is sync-only. Requires `httpx` (`pip install 'delega[async]'`).
 
 ## Error Handling
 
