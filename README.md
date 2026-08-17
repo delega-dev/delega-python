@@ -1,6 +1,8 @@
 # Delega Python SDK
 
-Official Python SDK for the [Delega](https://delega.dev) API.
+> **Maintenance status:** Delega’s public hosted service retired on July 28, 2026. This SDK remains public as a verifiable engineering artifact and for Ryan McMillan’s existing private deployment. New public accounts and hosted access are not available. See the [case study](https://ryanmcmillan.com/delega).
+
+Python SDK for the Delega API.
 
 ## Installation
 
@@ -14,7 +16,7 @@ For async support:
 pip install 'delega[async]'
 ```
 
-## Quick Start
+## Existing owner credentials
 
 ```python
 from delega import Delega
@@ -245,7 +247,7 @@ async with AsyncDelega(api_key="dlg_...") as client:
     await client.tasks.complete(task.id)
 ```
 
-The async client mirrors the sync interface, but all methods are coroutines. The one current exception is webhooks: async webhooks support `list()` and `create()`, while `delete()` is sync-only. Requires `httpx` (`pip install 'delega[async]'`).
+The async client mirrors the sync client for tasks, recurrences, agents, and projects; those methods are coroutines. The async webhooks namespace currently supports `list()` and `create()`, while `webhooks.delete()` is sync-only. Requires `httpx` (`pip install 'delega[async]'`).
 
 ## Error Handling
 

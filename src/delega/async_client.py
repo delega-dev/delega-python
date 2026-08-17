@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
-from ._http import normalize_base_url
+from ._http import encode_path_segment as _seg, normalize_base_url
 from .exceptions import (
     DelegaAPIError,
     DelegaAuthError,
@@ -201,27 +201,27 @@ class _AsyncTasksNamespace:
 
     async def get(self, task_id: str) -> Task:
         """Get a task by ID."""
-        data = await self._http.get(f"/tasks/{task_id}")
+        data = await self._http.get(f"/tasks/{_seg(task_id)}")
         return Task.from_dict(data)
 
     async def update(self, task_id: str, **fields: Any) -> Task:
         """Update a task."""
-        data = await self._http.patch(f"/tasks/{task_id}", body=fields)
+        data = await self._http.patch(f"/tasks/{_seg(task_id)}", body=fields)
         return Task.from_dict(data)
 
     async def delete(self, task_id: str) -> bool:
         """Delete a task."""
-        await self._http.delete(f"/tasks/{task_id}")
+        await self._http.delete(f"/tasks/{_seg(task_id)}")
         return True
 
     async def complete(self, task_id: str) -> Task:
         """Mark a task as completed."""
-        data = await self._http.post(f"/tasks/{task_id}/complete")
+        data = await self._http.post(f"/tasks/{_seg(task_id)}/complete")
         return Task.from_dict(data)
 
     async def uncomplete(self, task_id: str) -> Task:
         """Mark a task as not completed."""
-        data = await self._http.post(f"/tasks/{task_id}/uncomplete")
+        data = await self._http.post(f"/tasks/{_seg(task_id)}/uncomplete")
         return Task.from_dict(data)
 
     async def search(self, query: str) -> list[Task]:
@@ -259,19 +259,19 @@ class _AsyncTasksNamespace:
             body["due_date"] = due_date
         if assigned_to_agent_id is not None:
             body["assigned_to_agent_id"] = assigned_to_agent_id
-        data = await self._http.post(f"/tasks/{parent_task_id}/delegate", body=body)
+        data = await self._http.post(f"/tasks/{_seg(parent_task_id)}/delegate", body=body)
         return Task.from_dict(data)
 
     async def assign(self, task_id: str, agent_id: Optional[str]) -> Task:
         """Assign a task to an agent (or ``None`` to unassign)."""
         data = await self._http.put(
-            f"/tasks/{task_id}", body={"assigned_to_agent_id": agent_id}
+            f"/tasks/{_seg(task_id)}", body={"assigned_to_agent_id": agent_id}
         )
         return Task.from_dict(data)
 
     async def chain(self, task_id: str) -> DelegationChain:
         """Get the full parent/child delegation chain for a task."""
-        data = await self._http.get(f"/tasks/{task_id}/chain")
+        data = await self._http.get(f"/tasks/{_seg(task_id)}/chain")
         return DelegationChain.from_dict(data)
 
     async def update_context(
@@ -295,7 +295,7 @@ class _AsyncTasksNamespace:
         if expected_version is not None:
             params["expected_version"] = expected_version
         data = await self._http.patch(
-            f"/tasks/{task_id}/context", body=context, params=params or None
+            f"/tasks/{_seg(task_id)}/context", body=context, params=params or None
         )
         return _normalize_merged_context(data)
 
@@ -304,7 +304,7 @@ class _AsyncTasksNamespace:
     ) -> ContextSnapshot:
         """Read a task's persistent context blob and its version."""
         params = {"include": "provenance"} if include_provenance else None
-        data = await self._http.get(f"/tasks/{task_id}/context", params=params)
+        data = await self._http.get(f"/tasks/{_seg(task_id)}/context", params=params)
         return ContextSnapshot.from_dict(data)
 
     async def context_history(
@@ -317,13 +317,13 @@ class _AsyncTasksNamespace:
     ) -> ContextHistory:
         """Read the append-only provenance ledger for a task's context."""
         params: dict[str, Any] = {"key": key, "limit": limit, "cursor": cursor}
-        data = await self._http.get(f"/tasks/{task_id}/context/history", params=params)
+        data = await self._http.get(f"/tasks/{_seg(task_id)}/context/history", params=params)
         return ContextHistory.from_dict(data)
 
     async def supersede_context(self, task_id: str, key: str) -> ContextEntry:
         """Mark the live context entry for ``key`` as superseded (stale)."""
         data = await self._http.post(
-            f"/tasks/{task_id}/context/supersede", body={"key": key}
+            f"/tasks/{_seg(task_id)}/context/supersede", body={"key": key}
         )
         entry = data.get("superseded") if isinstance(data, dict) else None
         return ContextEntry.from_dict(entry if isinstance(entry, dict) else data)
@@ -338,12 +338,12 @@ class _AsyncTasksNamespace:
         body: dict[str, Any] = {"state": state}
         if detail is not None:
             body["detail"] = detail
-        data = await self._http.post(f"/tasks/{task_id}/state", body=body)
+        data = await self._http.post(f"/tasks/{_seg(task_id)}/state", body=body)
         return Task.from_dict(data)
 
     async def list_links(self, task_id: str) -> list[TaskLink]:
         """List the repo/URL links attached to a task."""
-        data = await self._http.get(f"/tasks/{task_id}/links")
+        data = await self._http.get(f"/tasks/{_seg(task_id)}/links")
         return [TaskLink.from_dict(l) for l in data]
 
     async def add_link(
@@ -361,12 +361,12 @@ class _AsyncTasksNamespace:
             body["repo"] = repo
         if url is not None:
             body["url"] = url
-        data = await self._http.post(f"/tasks/{task_id}/links", body=body)
+        data = await self._http.post(f"/tasks/{_seg(task_id)}/links", body=body)
         return TaskLink.from_dict(data)
 
     async def delete_link(self, task_id: str, link_id: str) -> bool:
         """Remove a link from a task."""
-        await self._http.delete(f"/tasks/{task_id}/links/{link_id}")
+        await self._http.delete(f"/tasks/{_seg(task_id)}/links/{_seg(link_id)}")
         return True
 
     async def find_duplicates(
@@ -404,7 +404,7 @@ class _AsyncTasksNamespace:
         if lease_seconds is not None:
             body["lease_seconds"] = lease_seconds
         if task_id is not None:
-            data = await self._http.post(f"/tasks/{task_id}/claim", body=body)
+            data = await self._http.post(f"/tasks/{_seg(task_id)}/claim", body=body)
         else:
             if project_id is not None:
                 body["project_id"] = project_id
@@ -427,7 +427,7 @@ class _AsyncTasksNamespace:
         body: dict[str, Any] = {}
         if lease_seconds is not None:
             body["lease_seconds"] = lease_seconds
-        data = await self._http.post(f"/tasks/{task_id}/heartbeat", body=body)
+        data = await self._http.post(f"/tasks/{_seg(task_id)}/heartbeat", body=body)
         return Task.from_dict(data)
 
     async def release(self, task_id: str) -> Task:
@@ -435,17 +435,17 @@ class _AsyncTasksNamespace:
 
         Only the claim holder or an admin may release.
         """
-        data = await self._http.post(f"/tasks/{task_id}/release")
+        data = await self._http.post(f"/tasks/{_seg(task_id)}/release")
         return Task.from_dict(data)
 
     async def add_comment(self, task_id: str, content: str) -> Comment:
         """Add a comment to a task."""
-        data = await self._http.post(f"/tasks/{task_id}/comments", body={"content": content})
+        data = await self._http.post(f"/tasks/{_seg(task_id)}/comments", body={"content": content})
         return Comment.from_dict(data)
 
     async def list_comments(self, task_id: str) -> list[Comment]:
         """List all comments on a task."""
-        data = await self._http.get(f"/tasks/{task_id}/comments")
+        data = await self._http.get(f"/tasks/{_seg(task_id)}/comments")
         return [Comment.from_dict(c) for c in data]
 
 
@@ -503,17 +503,17 @@ class _AsyncRecurrencesNamespace:
 
     async def get(self, recurrence_id: str) -> Recurrence:
         """Get one recurring task template."""
-        data = await self._http.get(f"/recurrences/{recurrence_id}")
+        data = await self._http.get(f"/recurrences/{_seg(recurrence_id)}")
         return Recurrence.from_dict(data)
 
     async def update(self, recurrence_id: str, **fields: Any) -> Recurrence:
         """Update a recurring task template, including ``active=False`` to pause."""
-        data = await self._http.put(f"/recurrences/{recurrence_id}", body=fields)
+        data = await self._http.put(f"/recurrences/{_seg(recurrence_id)}", body=fields)
         return Recurrence.from_dict(data)
 
     async def delete(self, recurrence_id: str) -> bool:
         """Delete a recurring task template. Spawned tasks remain."""
-        await self._http.delete(f"/recurrences/{recurrence_id}")
+        await self._http.delete(f"/recurrences/{_seg(recurrence_id)}")
         return True
 
 
@@ -553,22 +553,22 @@ class _AsyncAgentsNamespace:
 
     async def update(self, agent_id: str, **fields: Any) -> Agent:
         """Update an agent."""
-        data = await self._http.put(f"/agents/{agent_id}", body=fields)
+        data = await self._http.put(f"/agents/{_seg(agent_id)}", body=fields)
         return Agent.from_dict(data)
 
     async def set_role(self, agent_id: str, role: str) -> Agent:
         """Set an agent's role (admin key required): worker, coordinator, or admin."""
-        data = await self._http.put(f"/agents/{agent_id}", body={"role": role})
+        data = await self._http.put(f"/agents/{_seg(agent_id)}", body={"role": role})
         return Agent.from_dict(data)
 
     async def delete(self, agent_id: str) -> bool:
         """Delete an agent."""
-        await self._http.delete(f"/agents/{agent_id}")
+        await self._http.delete(f"/agents/{_seg(agent_id)}")
         return True
 
     async def rotate_key(self, agent_id: str) -> dict[str, Any]:
         """Rotate an agent's API key."""
-        data = await self._http.post(f"/agents/{agent_id}/rotate-key")
+        data = await self._http.post(f"/agents/{_seg(agent_id)}/rotate-key")
         return data  # type: ignore[no-any-return]
 
 

@@ -21,6 +21,21 @@ _DEFAULT_TIMEOUT = 30
 _LOCAL_API_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
+def encode_path_segment(value: Any) -> str:
+    """Percent-encode a single URL path segment.
+
+    Guards against a caller passing an id that contains ``/``, ``?``, ``#``,
+    ``..`` or whitespace from manipulating the request path/query. Every dynamic
+    path segment in the client is wrapped in this before interpolation.
+    """
+    raw = str(value)
+    # urllib leaves literal dot segments unchanged, and URL implementations
+    # normalize them as navigation rather than data.
+    if raw in ("", ".", ".."):
+        raise ValueError(f"Refusing to build an API path from unsafe id: {raw!r}")
+    return urllib.parse.quote(raw, safe="")
+
+
 def _normalize_host(hostname: str) -> str:
     return hostname.strip("[]").lower()
 

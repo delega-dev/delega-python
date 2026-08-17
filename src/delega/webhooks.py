@@ -6,6 +6,9 @@ import hashlib
 import hmac
 from datetime import datetime, timezone
 
+# Allowed clock skew for future-dated webhook timestamps (seconds).
+_MAX_FUTURE_SKEW_SECONDS = 60
+
 
 def _parse_timestamp(value: str) -> datetime:
     try:
@@ -49,16 +52,23 @@ def verify_webhook(
         raise ValueError("bad signature format")
 
     received_at = _parse_timestamp(timestamp)
-    age_seconds = abs((datetime.now(timezone.utc) - received_at).total_seconds())
+    age_seconds = (datetime.now(timezone.utc) - received_at).total_seconds()
+    # Reject timestamps too old (replay) or meaningfully in the future. A
+    # symmetric abs() window would have accepted a stamp up to the full
+    # tolerance ahead; allow only a small forward skew for clock drift.
     if age_seconds > tolerance_seconds:
         raise ValueError("stale timestamp")
+    if age_seconds < -_MAX_FUTURE_SKEW_SECONDS:
+        raise ValueError("timestamp too far in the future")
 
-    expected = "sha256=" + hmac.new(
+    expected_hex = hmac.new(
         secret.encode("utf-8"),
         timestamp.encode("utf-8") + b"." + payload,
         hashlib.sha256,
     ).hexdigest()
-    if not hmac.compare_digest(expected, signature):
+    # Compare the hex digests case-insensitively — the format check above
+    # permits uppercase hex, but hexdigest() is always lowercase.
+    if not hmac.compare_digest(expected_hex, signature_hex.lower()):
         raise ValueError("signature mismatch")
 
     return True
