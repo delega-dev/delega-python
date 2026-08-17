@@ -117,7 +117,7 @@ while True:
         raise
 ```
 
-`claim()` returns `None` when no claimable task is available. `lease_seconds` accepts 30-3600 (default 300); if the lease expires without a heartbeat, the task becomes claimable again. Claiming sets `status` to `"claimed"` but never touches `assigned_to_agent_id`. Filter claimed/unclaimed tasks with `client.tasks.list(claimed=True)` or `claimed=False`.
+`claim()` returns `None` when no claimable task is available. Pass `task_id="..."` to claim a specific task instead of pulling the next available task from the queue. `lease_seconds` accepts 30-3600 (default 300); if the lease expires without a heartbeat, the task becomes claimable again. Claiming sets `status` to `"claimed"` but never touches `assigned_to_agent_id`. Filter claimed/unclaimed tasks with `client.tasks.list(claimed=True)` or `claimed=False`.
 
 ## Session State
 
