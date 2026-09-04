@@ -5,7 +5,11 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
-from ._http import encode_path_segment as _seg, normalize_base_url
+from ._http import (
+    cloudflare_access_headers,
+    encode_path_segment as _seg,
+    normalize_base_url,
+)
 from .exceptions import (
     DelegaAPIError,
     DelegaAuthError,
@@ -47,7 +51,13 @@ def _require_httpx() -> Any:
 class _AsyncHTTPClient:
     """Async HTTP transport using httpx."""
 
-    def __init__(self, base_url: str, api_key: str, timeout: int = 30) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        timeout: int = 30,
+        access_headers: Optional[dict[str, str]] = None,
+    ) -> None:
         httpx = _require_httpx()
         self._base_url = normalize_base_url(base_url)
         self._api_key = api_key
@@ -58,6 +68,7 @@ class _AsyncHTTPClient:
                 "Content-Type": "application/json",
                 "Accept": "application/json",
                 "User-Agent": USER_AGENT,
+                **(access_headers or {}),
             },
             timeout=timeout,
         )
@@ -648,6 +659,11 @@ class AsyncDelega:
             a custom endpoint, use ``http://localhost:18890`` or an
             explicit ``.../api`` base URL.
         timeout: Request timeout in seconds. Defaults to 30.
+        cf_access_client_id: Optional Cloudflare Access service-token client ID.
+            Falls back to ``DELEGA_CF_ACCESS_CLIENT_ID``.
+        cf_access_client_secret: Optional Cloudflare Access service-token secret.
+            Falls back to ``DELEGA_CF_ACCESS_CLIENT_SECRET``. Both Access
+            values must be configured together.
 
     Raises:
         DelegaError: If no API key is provided or found in the environment.
@@ -660,6 +676,8 @@ class AsyncDelega:
         *,
         base_url: str = _DEFAULT_BASE_URL,
         timeout: int = 30,
+        cf_access_client_id: Optional[str] = None,
+        cf_access_client_secret: Optional[str] = None,
     ) -> None:
         resolved_key = (
             api_key
@@ -671,7 +689,14 @@ class AsyncDelega:
                 "No API key provided. Pass api_key= or set DELEGA_API_KEY "
                 "(or DELEGA_AGENT_KEY) in the environment."
             )
-        self._http = _AsyncHTTPClient(base_url=base_url, api_key=resolved_key, timeout=timeout)
+        self._http = _AsyncHTTPClient(
+            base_url=base_url,
+            api_key=resolved_key,
+            timeout=timeout,
+            access_headers=cloudflare_access_headers(
+                cf_access_client_id, cf_access_client_secret
+            ),
+        )
         self.tasks = _AsyncTasksNamespace(self._http)
         self.recurrences = _AsyncRecurrencesNamespace(self._http)
         self.agents = _AsyncAgentsNamespace(self._http)

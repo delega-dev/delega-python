@@ -658,6 +658,41 @@ class TestHeaders(unittest.TestCase):
         self.assertEqual(request.get_header("Content-type"), "application/json")
         self.assertEqual(request.get_header("User-agent"), USER_AGENT)
 
+    @patch("urllib.request.urlopen")
+    def test_cloudflare_access_headers_from_environment(
+        self, mock_urlopen: MagicMock
+    ) -> None:
+        mock_urlopen.return_value = _mock_response({"id": "a1", "name": "test"})
+        with patch.dict(
+            os.environ,
+            {
+                "DELEGA_CF_ACCESS_CLIENT_ID": "access-client-id",
+                "DELEGA_CF_ACCESS_CLIENT_SECRET": "access-client-secret",
+            },
+            clear=True,
+        ):
+            client = Delega(api_key="dlg_mykey123")
+            client.me()
+        request = mock_urlopen.call_args[0][0]
+        self.assertEqual(
+            request.get_header("Cf-access-client-id"), "access-client-id"
+        )
+        self.assertEqual(
+            request.get_header("Cf-access-client-secret"), "access-client-secret"
+        )
+
+    def test_partial_cloudflare_access_configuration_is_rejected_safely(self) -> None:
+        secret = "must-not-appear-in-errors"
+        with patch.dict(
+            os.environ,
+            {"DELEGA_CF_ACCESS_CLIENT_SECRET": secret},
+            clear=True,
+        ):
+            with self.assertRaises(DelegaError) as ctx:
+                Delega(api_key="dlg_mykey123")
+        self.assertIn("Set both DELEGA_CF_ACCESS_CLIENT_ID", str(ctx.exception))
+        self.assertNotIn(secret, str(ctx.exception))
+
     @patch("delega.async_client._require_httpx")
     def test_async_client_sets_user_agent(self, mock_require_httpx: MagicMock) -> None:
         fake_httpx = MagicMock()
@@ -671,6 +706,29 @@ class TestHeaders(unittest.TestCase):
 
         _, kwargs = fake_async_client.call_args
         self.assertEqual(kwargs["headers"]["User-Agent"], USER_AGENT)
+
+    @patch("delega.async_client._require_httpx")
+    def test_async_client_sets_cloudflare_access_headers(
+        self, mock_require_httpx: MagicMock
+    ) -> None:
+        fake_httpx = MagicMock()
+        fake_async_client = MagicMock()
+        fake_httpx.AsyncClient = fake_async_client
+        mock_require_httpx.return_value = fake_httpx
+
+        from delega.async_client import AsyncDelega
+
+        AsyncDelega(
+            api_key="dlg_async",
+            cf_access_client_id="access-client-id",
+            cf_access_client_secret="access-client-secret",
+        )
+
+        _, kwargs = fake_async_client.call_args
+        self.assertEqual(kwargs["headers"]["CF-Access-Client-Id"], "access-client-id")
+        self.assertEqual(
+            kwargs["headers"]["CF-Access-Client-Secret"], "access-client-secret"
+        )
 
 
 class TestModels(unittest.TestCase):
