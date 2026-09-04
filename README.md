@@ -37,6 +37,8 @@ client.tasks.complete(task.id)
 
 Pass your API key directly or set the `DELEGA_API_KEY` environment variable. `DELEGA_AGENT_KEY` is also accepted as a fallback for shells that are already configured for the Delega MCP; when both are set, `DELEGA_API_KEY` wins.
 
+For a deployment protected by Cloudflare Access, set both `DELEGA_CF_ACCESS_CLIENT_ID` and `DELEGA_CF_ACCESS_CLIENT_SECRET`, or pass `cf_access_client_id=` and `cf_access_client_secret=` to the client constructor. Partial Access configuration is rejected without exposing either value.
+
 ```python
 # Explicit
 client = Delega(api_key="dlg_...")

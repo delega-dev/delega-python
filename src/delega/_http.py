@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from ._version import USER_AGENT
 from .exceptions import (
@@ -19,6 +20,35 @@ from .exceptions import (
 
 _DEFAULT_TIMEOUT = 30
 _LOCAL_API_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def cloudflare_access_headers(
+    client_id: Optional[str] = None,
+    client_secret: Optional[str] = None,
+) -> dict[str, str]:
+    """Resolve an optional, paired Cloudflare Access service token."""
+    resolved_id = (
+        client_id
+        if client_id is not None
+        else os.environ.get("DELEGA_CF_ACCESS_CLIENT_ID")
+    )
+    resolved_secret = (
+        client_secret
+        if client_secret is not None
+        else os.environ.get("DELEGA_CF_ACCESS_CLIENT_SECRET")
+    )
+    if bool(resolved_id) != bool(resolved_secret):
+        raise DelegaError(
+            "Cloudflare Access configuration is incomplete. Set both "
+            "DELEGA_CF_ACCESS_CLIENT_ID and DELEGA_CF_ACCESS_CLIENT_SECRET, "
+            "or neither."
+        )
+    if not resolved_id:
+        return {}
+    return {
+        "CF-Access-Client-Id": resolved_id,
+        "CF-Access-Client-Secret": resolved_secret or "",
+    }
 
 
 def encode_path_segment(value: Any) -> str:
@@ -70,10 +100,17 @@ def normalize_base_url(raw_url: str) -> str:
 class HTTPClient:
     """Synchronous HTTP client using urllib."""
 
-    def __init__(self, base_url: str, api_key: str, timeout: int = _DEFAULT_TIMEOUT) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        timeout: int = _DEFAULT_TIMEOUT,
+        access_headers: Optional[Mapping[str, str]] = None,
+    ) -> None:
         self._base_url = normalize_base_url(base_url)
         self._api_key = api_key
         self._timeout = timeout
+        self._access_headers = dict(access_headers or {})
 
     @property
     def path_prefix(self) -> str:
@@ -86,6 +123,7 @@ class HTTPClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": USER_AGENT,
+            **self._access_headers,
         }
 
     def request(

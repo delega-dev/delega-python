@@ -5,7 +5,11 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
-from ._http import HTTPClient, encode_path_segment as _seg
+from ._http import (
+    HTTPClient,
+    cloudflare_access_headers,
+    encode_path_segment as _seg,
+)
 from .exceptions import DelegaError
 from .models import (
     Agent,
@@ -779,6 +783,11 @@ class Delega:
             a custom endpoint, use ``http://localhost:18890`` or an
             explicit ``.../api`` base URL.
         timeout: Request timeout in seconds. Defaults to 30.
+        cf_access_client_id: Optional Cloudflare Access service-token client ID.
+            Falls back to ``DELEGA_CF_ACCESS_CLIENT_ID``.
+        cf_access_client_secret: Optional Cloudflare Access service-token secret.
+            Falls back to ``DELEGA_CF_ACCESS_CLIENT_SECRET``. Both Access
+            values must be configured together.
 
     Raises:
         DelegaError: If no API key is provided or found in the environment.
@@ -790,6 +799,8 @@ class Delega:
         *,
         base_url: str = _DEFAULT_BASE_URL,
         timeout: int = 30,
+        cf_access_client_id: Optional[str] = None,
+        cf_access_client_secret: Optional[str] = None,
     ) -> None:
         # Accept both env vars so agents configuring the MCP (primary:
         # DELEGA_AGENT_KEY) and this SDK (primary: DELEGA_API_KEY) in one
@@ -804,7 +815,14 @@ class Delega:
                 "No API key provided. Pass api_key= or set DELEGA_API_KEY "
                 "(or DELEGA_AGENT_KEY) in the environment."
             )
-        self._http = HTTPClient(base_url=base_url, api_key=resolved_key, timeout=timeout)
+        self._http = HTTPClient(
+            base_url=base_url,
+            api_key=resolved_key,
+            timeout=timeout,
+            access_headers=cloudflare_access_headers(
+                cf_access_client_id, cf_access_client_secret
+            ),
+        )
         self.tasks = _TasksNamespace(self._http)
         self.recurrences = _RecurrencesNamespace(self._http)
         self.agents = _AgentsNamespace(self._http)
