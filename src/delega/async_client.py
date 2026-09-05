@@ -6,17 +6,13 @@ import os
 from typing import Any, Optional
 
 from ._http import (
+    api_error,
     cloudflare_access_headers,
+    normalize_query_params,
     encode_path_segment as _seg,
     normalize_base_url,
 )
-from .exceptions import (
-    DelegaAPIError,
-    DelegaAuthError,
-    DelegaError,
-    DelegaNotFoundError,
-    DelegaRateLimitError,
-)
+from .exceptions import DelegaError
 from .models import (
     Agent,
     Comment,
@@ -88,34 +84,15 @@ class _AsyncHTTPClient:
         body: Optional[dict[str, Any]] = None,
     ) -> Any:
         """Send an async HTTP request and return parsed JSON."""
-        filtered_params = None
-        if params:
-            filtered_params = {k: v for k, v in params.items() if v is not None}
-            if not filtered_params:
-                filtered_params = None
-
         resp = await self._client.request(
             method,
             path,
-            params=filtered_params,
+            params=normalize_query_params(params),
             json=body,
         )
 
         if resp.status_code >= 400:
-            try:
-                error_data = resp.json()
-                message = error_data.get("error", error_data.get("message", resp.text))
-            except Exception:
-                message = resp.text or resp.reason_phrase
-
-            status = resp.status_code
-            if status in (401, 403):
-                raise DelegaAuthError(error_message=message, status_code=status)
-            if status == 404:
-                raise DelegaNotFoundError(error_message=message)
-            if status == 429:
-                raise DelegaRateLimitError(error_message=message)
-            raise DelegaAPIError(status_code=status, error_message=message)
+            raise api_error(resp.status_code, resp.text, resp.reason_phrase)
 
         if not resp.text:
             return True
@@ -181,8 +158,7 @@ class _AsyncTasksNamespace:
             "due_after": due_after,
             "due_before": due_before,
             "completed": completed,
-            # Contract: ?claimed=true|false (lowercase).
-            "claimed": None if claimed is None else ("true" if claimed else "false"),
+            "claimed": claimed,
         }
         data = await self._http.get("/tasks", params=params)
         return [Task.from_dict(t) for t in data]

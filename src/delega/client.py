@@ -71,8 +71,7 @@ class _TasksNamespace:
             "due_after": due_after,
             "due_before": due_before,
             "completed": completed,
-            # Contract: ?claimed=true|false (lowercase).
-            "claimed": None if claimed is None else ("true" if claimed else "false"),
+            "claimed": claimed,
         }
         data = self._http.get("/tasks", params=params)
         return [Task.from_dict(t) for t in data]
