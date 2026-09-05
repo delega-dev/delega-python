@@ -158,7 +158,7 @@ class TestTasksMethods(unittest.TestCase):
         call_args = mock_urlopen.call_args
         request = call_args[0][0]
         self.assertIn("priority=1", request.full_url)
-        self.assertIn("completed=True", request.full_url)
+        self.assertIn("completed=true", request.full_url)
 
     @patch("urllib.request.urlopen")
     def test_create_task(self, mock_urlopen: MagicMock) -> None:

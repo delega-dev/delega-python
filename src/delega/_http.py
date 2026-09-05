@@ -97,6 +97,37 @@ def normalize_base_url(raw_url: str) -> str:
     )
 
 
+def normalize_query_params(params: Optional[dict[str, Any]]) -> dict[str, Any]:
+    """Use the API's lowercase boolean literals in both HTTP transports."""
+    return {
+        key: str(value).lower() if isinstance(value, bool) else value
+        for key, value in (params or {}).items()
+        if value is not None
+    }
+
+
+def api_error(status: int, body: str, reason: str) -> DelegaAPIError:
+    """Keep HTTP status classification independent of the response body shape."""
+    message = body or reason
+    try:
+        data = json.loads(body)
+    except (ValueError, TypeError):
+        data = None
+    if isinstance(data, dict):
+        detail = data.get("error", data.get("message"))
+        if isinstance(detail, dict):
+            detail = detail.get("message")
+        if isinstance(detail, str) and detail:
+            message = detail
+    if status in (401, 403):
+        return DelegaAuthError(error_message=message, status_code=status)
+    if status == 404:
+        return DelegaNotFoundError(error_message=message)
+    if status == 429:
+        return DelegaRateLimitError(error_message=message)
+    return DelegaAPIError(status_code=status, error_message=message)
+
+
 class HTTPClient:
     """Synchronous HTTP client using urllib."""
 
@@ -154,7 +185,7 @@ class HTTPClient:
         """
         url = self._base_url + path
         if params:
-            filtered = {k: v for k, v in params.items() if v is not None}
+            filtered = normalize_query_params(params)
             if filtered:
                 query = urllib.parse.urlencode(filtered, doseq=True)
                 url = f"{url}?{query}"
@@ -170,20 +201,7 @@ class HTTPClient:
                 return json.loads(resp_body)
         except urllib.error.HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace")
-            try:
-                error_data = json.loads(error_body)
-                message = error_data.get("error", error_data.get("message", error_body))
-            except (json.JSONDecodeError, ValueError):
-                message = error_body or exc.reason
-
-            status = exc.code
-            if status in (401, 403):
-                raise DelegaAuthError(error_message=message, status_code=status) from exc
-            if status == 404:
-                raise DelegaNotFoundError(error_message=message) from exc
-            if status == 429:
-                raise DelegaRateLimitError(error_message=message) from exc
-            raise DelegaAPIError(status_code=status, error_message=message) from exc
+            raise api_error(exc.code, error_body, str(exc.reason)) from exc
 
     def get(self, path: str, *, params: Optional[dict[str, Any]] = None) -> Any:
         """Send a GET request."""
