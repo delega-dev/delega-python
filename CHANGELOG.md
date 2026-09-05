@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-09-05
+
+### Fixed
+- Sync and async task filters encode boolean values as the lowercase literals accepted by the API.
+- Both transports consistently classify HTTP errors, including nested error objects and non-object JSON responses.
+
 ## [0.6.4] - 2026-09-04
 
 ### Added
