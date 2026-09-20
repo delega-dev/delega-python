@@ -121,6 +121,41 @@ while True:
 
 `claim()` returns `None` when no claimable task is available. Pass `task_id="..."` to claim a specific task instead of pulling the next available task from the queue. `lease_seconds` accepts 30-3600 (default 300); if the lease expires without a heartbeat, the task becomes claimable again. Claiming sets `status` to `"claimed"` but never touches `assigned_to_agent_id`. Filter claimed/unclaimed tasks with `client.tasks.list(claimed=True)` or `claimed=False`.
 
+## Private human requests
+
+The optional human-request API registers a checklist on an existing open,
+unclaimed task assigned to the configured runtime, labeled `autopilot-hold` and
+requiring evidence. Registration does not send, claim, schedule or approve a
+run. Only the existing self recipient is supported.
+
+```python
+task = client.tasks.get(existing_task_id)
+request = client.tasks.request_human(
+    task.id,
+    criteria=["Projector checked", "Chairs counted"],
+    expected_revision=task.revision,
+    timeout_seconds=1200,
+)
+status = client.tasks.human_request(task.id)
+result = client.tasks.human_result(task.id)
+# result.result is None until verified canonical completion.
+# A completed checklist is human-attested, not physical verification.
+cancelled = client.tasks.cancel_human_request(
+    task.id, expected_version=status.version
+)
+```
+
+These methods return `HumanRequest`. `AsyncDelega` exposes the same methods with
+`await`. Equal registration retries replay the immutable request; changed input
+conflicts. Cancellation uses the request version and leaves release to the
+executor. API errors do not fall back to task creation or execution.
+
+`tasks.create` accepts `assigned_to_agent_id` and `evidence_policy="required"` for
+ordinary explicit task creation. Task reads retain `revision` and
+`claim_generation`. Advanced executors can pass those fields and `evidence` to
+`tasks.complete`; the API still enforces ownership and protected human replies.
+No SDK installation enables the server feature or a controller run.
+
 ## Session State
 
 Report what a worker is doing on a task — without touching the claim lease — so orchestrators and dashboards can see `working`, `waiting_input`, or `errored` states:

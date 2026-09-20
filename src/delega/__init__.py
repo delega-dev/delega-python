@@ -2,6 +2,7 @@
 
 from ._version import __version__
 from .client import Delega
+from .human_requests import HumanRequest
 from .exceptions import (
     DelegaAPIError,
     DelegaAuthError,
@@ -27,6 +28,7 @@ from .webhooks import verify_webhook
 
 __all__ = [
     "Agent",
+    "HumanRequest",
     "AsyncDelega",
     "Comment",
     "ContextEntry",

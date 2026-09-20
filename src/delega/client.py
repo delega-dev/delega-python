@@ -11,6 +11,7 @@ from ._http import (
     encode_path_segment as _seg,
 )
 from .exceptions import DelegaError
+from .human_requests import HumanRequest, request_path, registration_body, nonnegative_integer, completion_body
 from .models import (
     Agent,
     Comment,
@@ -85,6 +86,8 @@ class _TasksNamespace:
         labels: Optional[list[str]] = None,
         due_date: Optional[str] = None,
         project_id: Optional[str] = None,
+        assigned_to_agent_id: Optional[str] = None,
+        evidence_policy: Optional[str] = None,
     ) -> Task:
         """Create a new task.
 
@@ -105,6 +108,10 @@ class _TasksNamespace:
             body["due_date"] = due_date
         if project_id is not None:
             body["project_id"] = project_id
+        if assigned_to_agent_id is not None:
+            body["assigned_to_agent_id"] = assigned_to_agent_id
+        if evidence_policy is not None:
+            body["evidence_policy"] = evidence_policy
         data = self._http.post("/tasks", body=body)
         return Task.from_dict(data)
 
@@ -139,14 +146,37 @@ class _TasksNamespace:
         self._http.delete(f"/tasks/{_seg(task_id)}")
         return True
 
-    def complete(self, task_id: str) -> Task:
+    def complete(self, task_id: str, *, evidence: Optional[list[dict[str, Any]]] = None,
+                 expected_revision: Optional[int] = None, claim_generation: Optional[int] = None) -> Task:
         """Mark a task as completed.
 
         Args:
             task_id: The task identifier.
         """
-        data = self._http.post(f"/tasks/{_seg(task_id)}/complete")
+        data = self._http.post(f"/tasks/{_seg(task_id)}/complete",
+                               body=completion_body(evidence, expected_revision, claim_generation))
         return Task.from_dict(data)
+
+    def request_human(self, task_id: str, *, criteria: list[str], expected_revision: int,
+                      timeout_seconds: int = 1200) -> HumanRequest:
+        """Register an immutable self-recipient checklist; does not run or send."""
+        data = self._http.post(request_path(task_id),
+            body=registration_body(criteria, expected_revision, timeout_seconds))
+        return HumanRequest.from_dict(data)
+
+    def human_request(self, task_id: str) -> HumanRequest:
+        """Read request state and version without changing task ownership."""
+        return HumanRequest.from_dict(self._http.get(request_path(task_id)))
+
+    def human_result(self, task_id: str) -> HumanRequest:
+        """Read server-verified completion; result is null until verified."""
+        return HumanRequest.from_dict(self._http.get(request_path(task_id) + "/result"))
+
+    def cancel_human_request(self, task_id: str, *, expected_version: int) -> HumanRequest:
+        """Record cancellation without taking the executor's claim."""
+        data = self._http.post(request_path(task_id) + "/cancel",
+                              body={"expected_version": nonnegative_integer(expected_version, "expected_version")})
+        return HumanRequest.from_dict(data)
 
     def uncomplete(self, task_id: str) -> Task:
         """Mark a task as not completed.

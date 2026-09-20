@@ -79,6 +79,10 @@ class Task:
     context_version: int = 0
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    revision: Optional[int] = None
+    claim_generation: Optional[int] = None
+    evidence_policy: Optional[str] = None
+    completion_evidence: Optional[list[dict[str, Any]]] = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Task:
@@ -117,6 +121,10 @@ class Task:
             accountable_agent_id=data.get("accountable_agent_id"),
             context=raw_ctx if isinstance(raw_ctx, dict) else None,
             context_version=data.get("context_version", 0) or 0,
+            revision=data.get("revision"),
+            claim_generation=data.get("claim_generation"),
+            evidence_policy=data.get("evidence_policy"),
+            completion_evidence=data.get("completion_evidence"),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
         )
