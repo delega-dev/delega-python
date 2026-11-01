@@ -15,7 +15,9 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # ubuntu-latest (26.04) no longer ships Python 3.9, which this package still
+    # supports (requires-python >=3.9). Pin the runner until 3.9 support is dropped.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python-version: ${{ fromJSON(inputs.python-versions) }}
