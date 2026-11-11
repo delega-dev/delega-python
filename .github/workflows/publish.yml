@@ -5,12 +5,16 @@ on:
     tags:
       - 'v*'
 
+# Least privilege by default: only the publish job can write the release or
+# mint the PyPI OIDC token. The test job installs third-party packages and must
+# not inherit either permission.
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
   test:
+    permissions:
+      contents: read
     # Calls the reusable workflow with a reduced 3.9/3.11/3.13 matrix for
     # release gate — slightly less coverage than CI since PRs already
     # exercised the full 3.9-3.13 matrix before getting here.
